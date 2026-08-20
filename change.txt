@@ -1,0 +1,28 @@
+Step 1: Change these 3 things in scraper.py
+
+A. The starting URL (~line 45):
+
+python
+BASE_URL = "https://YOUR-SITE.com/"
+START_URL = "https://YOUR-SITE.com/products"   # wherever the listing starts
+
+
+
+
+B. The selectors in parse_listing_page() — this is the part that actually finds and reads each product:
+
+python
+cards = soup.select("article.product_pod")   # ← change to match your site's product container
+
+title = card.select_one("h3 a")               # ← change to your site's title element
+price = safe_text(card.select_one("p.price_color"))
+availability = safe_text(card.select_one("p.instock.availability"))
+img_node = card.select_one("img")
+
+
+
+
+C. The next-page logic in get_next_page_url():
+
+python
+next_link = soup.select_one("li.next a")   # ← change to match your site's pagination
