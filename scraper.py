@@ -4,8 +4,8 @@ Production-grade web scraper
 =============================
 
 Target site   : https://opmcm.gov.np/category/information-and-news/
-                (सूचना तथा समाचार — "Notices & News" section of Nepal's
-                Office of the Prime Minister and Council of Ministers)
+                 (सूचना तथा समाचार — "Notices & News" section of Nepal's
+                 Office of the Prime Minister and Council of Ministers)
 Data extracted : Title (शीर्षक), Published Date (प्रकाशित मिति), Link (URL)
 Stack          : requests + BeautifulSoup4 (static server-rendered HTML table)
 Output         : CSV, JSON, or SQLite (configurable via CLI flag)
@@ -118,9 +118,11 @@ def build_session() -> requests.Session:
 def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
     """Fetch a URL and return a parsed BeautifulSoup tree.
 
-    Rotates User-Agent per request, applies a randomized polite delay,
-    and never raises -- returns None on unrecoverable failure so the
-    caller can decide whether to skip or abort.
+    Rotates User-Agent per request and never raises -- returns None on 
+    unrecoverable failure so the caller can decide whether to skip or abort.
+    
+    NOTE: Delay is applied in scrape_all() before calling this function,
+    not here, to allow proper control over delay timing and ranges.
     """
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
@@ -129,7 +131,6 @@ def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
     }
 
     try:
-        time.sleep(random.uniform(*DEFAULT_DELAY_RANGE))
         response = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return BeautifulSoup(response.text, "html.parser")
@@ -229,6 +230,8 @@ def scrape_all(max_pages: Optional[int] = None, delay_range: tuple[float, float]
     """Walk ?page=1, ?page=2, ... until a page returns zero notices, or
     max_pages is reached. Robust to individual page failures: a failed
     page is logged and the loop stops gracefully rather than crashing.
+    
+    Delay is applied before each page fetch for polite scraping.
     """
     session = build_session()
     all_notices: list[Notice] = []
@@ -242,7 +245,7 @@ def scrape_all(max_pages: Optional[int] = None, delay_range: tuple[float, float]
         current_url = LISTING_URL_TEMPLATE.format(page=page_num)
         logger.info("Fetching page %d: %s", page_num, current_url)
         
-        # Use provided delay_range instead of global
+        # Apply polite delay before each fetch (delay_range honored here, not in fetch_page)
         time.sleep(random.uniform(*delay_range))
         soup = fetch_page(session, current_url)
 
@@ -340,7 +343,7 @@ def save_sqlite(notices: list[Notice], filepath: str) -> None:
             conn.commit()
             logger.info("Saved %d records to %s (table: notices)", len(notices), filepath)
         finally:
-            # FIXED: Always close connection, even if executemany fails
+            # Always close connection, even if executemany fails
             if conn is not None:
                 conn.close()
     except (sqlite3.Error, IOError) as e:
@@ -379,7 +382,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
 
-    # FIXED: Validate delay range before proceeding
+    # Validate delay range before proceeding
     if args.delay_min > args.delay_max:
         logger.error("Invalid delay range: --delay-min (%.1f) must be <= --delay-max (%.1f)", 
                      args.delay_min, args.delay_max)
