@@ -4,8 +4,8 @@ Production-grade web scraper
 =============================
 
 Target site   : https://opmcm.gov.np/category/information-and-news/
-                 (सूचना तथा समाचार — "Notices & News" section of Nepal's
-                 Office of the Prime Minister and Council of Ministers)
+                (सूचना तथा समाचार — "Notices & News" section of Nepal's
+                Office of the Prime Minister and Council of Ministers)
 Data extracted : Title (शीर्षक), Published Date (प्रकाशित मिति), Link (URL)
 Stack          : requests + BeautifulSoup4 (static server-rendered HTML table)
 Output         : CSV, JSON, or SQLite (configurable via CLI flag)
@@ -31,6 +31,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import random
 import sqlite3
 import sys
@@ -67,9 +68,9 @@ USER_AGENTS = [
 MAX_RETRIES = 4
 BACKOFF_FACTOR = 1.5          # exponential backoff between retries
 REQUEST_TIMEOUT = 15          # seconds
-DELAY_RANGE = (1.5, 3.0)      # polite randomized delay between page fetches
-                               # (kept a bit higher than default -- this is
-                               # a government server, be extra respectful)
+DEFAULT_DELAY_RANGE = (1.5, 3.0)      # polite randomized delay between page fetches
+                                       # (kept a bit higher than default -- this is
+                                       # a government server, be extra respectful)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -128,7 +129,7 @@ def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
     }
 
     try:
-        time.sleep(random.uniform(*DELAY_RANGE))
+        time.sleep(random.uniform(*DEFAULT_DELAY_RANGE))
         response = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return BeautifulSoup(response.text, "html.parser")
@@ -224,7 +225,7 @@ def parse_listing_page(soup: BeautifulSoup, page_url: str) -> list[Notice]:
 # PAGINATION LOOP
 # --------------------------------------------------------------------------
 
-def scrape_all(max_pages: Optional[int] = None) -> list[Notice]:
+def scrape_all(max_pages: Optional[int] = None, delay_range: tuple[float, float] = DEFAULT_DELAY_RANGE) -> list[Notice]:
     """Walk ?page=1, ?page=2, ... until a page returns zero notices, or
     max_pages is reached. Robust to individual page failures: a failed
     page is logged and the loop stops gracefully rather than crashing.
@@ -240,6 +241,9 @@ def scrape_all(max_pages: Optional[int] = None) -> list[Notice]:
 
         current_url = LISTING_URL_TEMPLATE.format(page=page_num)
         logger.info("Fetching page %d: %s", page_num, current_url)
+        
+        # Use provided delay_range instead of global
+        time.sleep(random.uniform(*delay_range))
         soup = fetch_page(session, current_url)
 
         if soup is None:
@@ -265,46 +269,83 @@ def scrape_all(max_pages: Optional[int] = None) -> list[Notice]:
 # --------------------------------------------------------------------------
 
 def save_csv(notices: list[Notice], filepath: str) -> None:
+    """Save notices to CSV file. UTF-8 (no BOM) for compatibility."""
     if not notices:
         logger.warning("No notices to save (CSV).")
         return
-    fieldnames = list(asdict(notices[0]).keys())
-    with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-        # utf-8-sig so Excel on Windows renders Nepali (Devanagari) text
-        # correctly instead of mangling it.
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for n in notices:
-            writer.writerow(asdict(n))
-    logger.info("Saved %d records to %s", len(notices), filepath)
+    
+    try:
+        # Create parent directory if it doesn't exist
+        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+        
+        fieldnames = list(asdict(notices[0]).keys())
+        with open(filepath, "w", newline="", encoding="utf-8") as f:
+            # Plain UTF-8 (no BOM) for maximum compatibility with data analysis tools
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for n in notices:
+                writer.writerow(asdict(n))
+        logger.info("Saved %d records to %s", len(notices), filepath)
+    except IOError as e:
+        logger.error("Failed to save CSV to %s: %s", filepath, e)
+        raise
 
 
 def save_json(notices: list[Notice], filepath: str) -> None:
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump([asdict(n) for n in notices], f, indent=2, ensure_ascii=False)
-    logger.info("Saved %d records to %s", len(notices), filepath)
+    """Save notices to JSON file."""
+    if not notices:
+        logger.warning("No notices to save (JSON).")
+        return
+    
+    try:
+        # Create parent directory if it doesn't exist
+        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump([asdict(n) for n in notices], f, indent=2, ensure_ascii=False)
+        logger.info("Saved %d records to %s", len(notices), filepath)
+    except IOError as e:
+        logger.error("Failed to save JSON to %s: %s", filepath, e)
+        raise
 
 
 def save_sqlite(notices: list[Notice], filepath: str) -> None:
-    conn = sqlite3.connect(filepath)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS notices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            published_date TEXT,
-            url TEXT,
-            scraped_at TEXT
-        )
-    """)
-    cur.executemany(
-        """INSERT INTO notices (title, published_date, url, scraped_at)
-           VALUES (:title, :published_date, :url, :scraped_at)""",
-        [asdict(n) for n in notices],
-    )
-    conn.commit()
-    conn.close()
-    logger.info("Saved %d records to %s (table: notices)", len(notices), filepath)
+    """Save notices to SQLite database. Properly handles connection lifecycle."""
+    if not notices:
+        logger.warning("No notices to save (SQLite).")
+        return
+    
+    try:
+        # Create parent directory if it doesn't exist
+        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
+        
+        conn = None
+        try:
+            conn = sqlite3.connect(filepath)
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS notices (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    published_date TEXT,
+                    url TEXT,
+                    scraped_at TEXT
+                )
+            """)
+            cur.executemany(
+                """INSERT INTO notices (title, published_date, url, scraped_at)
+                   VALUES (:title, :published_date, :url, :scraped_at)""",
+                [asdict(n) for n in notices],
+            )
+            conn.commit()
+            logger.info("Saved %d records to %s (table: notices)", len(notices), filepath)
+        finally:
+            # FIXED: Always close connection, even if executemany fails
+            if conn is not None:
+                conn.close()
+    except (sqlite3.Error, IOError) as e:
+        logger.error("Failed to save SQLite to %s: %s", filepath, e)
+        raise
 
 
 SAVERS = {
@@ -328,33 +369,49 @@ def parse_args() -> argparse.Namespace:
                          help="Output file path (default: opmcm_notices.<ext>)")
     parser.add_argument("--max-pages", type=int, default=None,
                          help="Limit number of pages to scrape (default: all pages)")
-    parser.add_argument("--delay-min", type=float, default=DELAY_RANGE[0],
-                         help="Minimum delay between requests, seconds")
-    parser.add_argument("--delay-max", type=float, default=DELAY_RANGE[1],
-                         help="Maximum delay between requests, seconds")
+    parser.add_argument("--delay-min", type=float, default=DEFAULT_DELAY_RANGE[0],
+                         help="Minimum delay between requests, seconds (default: %.1f)" % DEFAULT_DELAY_RANGE[0])
+    parser.add_argument("--delay-max", type=float, default=DEFAULT_DELAY_RANGE[1],
+                         help="Maximum delay between requests, seconds (default: %.1f)" % DEFAULT_DELAY_RANGE[1])
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
 
-    global DELAY_RANGE
-    DELAY_RANGE = (args.delay_min, args.delay_max)
+    # FIXED: Validate delay range before proceeding
+    if args.delay_min > args.delay_max:
+        logger.error("Invalid delay range: --delay-min (%.1f) must be <= --delay-max (%.1f)", 
+                     args.delay_min, args.delay_max)
+        return 1
+    
+    if args.delay_min < 0 or args.delay_max < 0:
+        logger.error("Delay values must be non-negative")
+        return 1
 
     default_ext = {"csv": "csv", "json": "json", "sqlite": "db"}[args.output_format]
     output_file = args.output_file or f"opmcm_notices.{default_ext}"
 
     try:
-        notices = scrape_all(max_pages=args.max_pages)
+        delay_range = (args.delay_min, args.delay_max)
+        notices = scrape_all(max_pages=args.max_pages, delay_range=delay_range)
     except KeyboardInterrupt:
         logger.warning("Interrupted by user.")
+        return 1
+    except Exception as e:
+        logger.error("Scraping failed: %s", e)
         return 1
 
     if not notices:
         logger.error("No notices were scraped. Exiting without writing output.")
         return 1
 
-    SAVERS[args.output_format](notices, output_file)
+    try:
+        SAVERS[args.output_format](notices, output_file)
+    except Exception as e:
+        logger.error("Failed to save output: %s", e)
+        return 1
+    
     return 0
 
 
