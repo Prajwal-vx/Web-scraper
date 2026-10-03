@@ -1,29 +1,4 @@
-#!/usr/bin/env python3
-"""
-Production-grade web scraper
-=============================
 
-Target site   : https://opmcm.gov.np/category/information-and-news/
-                 (सूचना तथा समाचार — "Notices & News" section of Nepal's
-                 Office of the Prime Minister and Council of Ministers)
-Data extracted : Title (शीर्षक), Published Date (प्रकाशित मिति), Link (URL)
-Stack          : requests + BeautifulSoup4 (static server-rendered HTML table)
-Output         : CSV, JSON, or SQLite (configurable via CLI flag)
-
-Site structure notes (found by inspecting the live page):
-- Listings render as a plain HTML <table> with one <tr> per notice.
-- Columns (in order): क्र.स. (row number), शीर्षक (title, contains the <a>
-  link to the notice), प्रकाशित मिति (published date + time), फाइल प्रकार
-  (PDF attachment link), कार्य (duplicate link to the content page).
-- Pagination is a simple query string: ?page=1, ?page=2, ?page=3, ...
-- There is no reliable "next" link markup to follow (the visible pager
-  is just numbered links), so this script paginates by incrementing
-  ?page=N and stops as soon as a page returns zero table rows.
-
-To adapt this script to a different site, you mainly need to change:
-1. LISTING_URL_TEMPLATE
-2. parse_listing_page() -- the row/cell selectors
-"""
 
 from __future__ import annotations
 
@@ -35,71 +10,41 @@ import random
 import sqlite3
 import sys
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# --------------------------------------------------------------------------
-# CONFIG
-# --------------------------------------------------------------------------
-
-BASE_URL = "https://opmcm.gov.np/"
-CATEGORY_URL = urljoin(BASE_URL, "category/information-and-news/")
-# The site paginates via a query string appended to the category URL.
-LISTING_URL_TEMPLATE = CATEGORY_URL + "?page={page}"
-
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
-    "(KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 "
-    "Firefox/125.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
 ]
 
 MAX_RETRIES = 4
-BACKOFF_FACTOR = 1.5          # exponential backoff between retries
-REQUEST_TIMEOUT = 15          # seconds
-DELAY_RANGE = (1.5, 3.0)      # polite randomized delay between page fetches
-                               # (kept a bit higher than default -- this is
-                               # a government server, be extra respectful)
+BACKOFF_FACTOR = 1.5
+REQUEST_TIMEOUT = 20
+DELAY_RANGE = (1.0, 2.5)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-7s | %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger("scraper")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(message)s", datefmt="%H:%M:%S")
+logger = logging.getLogger("generic_scraper")
 
-
-# --------------------------------------------------------------------------
-# DATA MODEL
-# --------------------------------------------------------------------------
 
 @dataclass
-class Notice:
-    """Structured representation of a single scraped notice/news item."""
+class ScrapedPage:
     title: str
-    published_date: Optional[str] = None
-    url: Optional[str] = None
+    url: str
+    text: str
+    links: list[str] = field(default_factory=list)
     scraped_at: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
-# --------------------------------------------------------------------------
-# HTTP SESSION WITH RETRIES + UA ROTATION
-# --------------------------------------------------------------------------
-
 def build_session() -> requests.Session:
-    """Create a requests.Session with automatic retry/backoff on transient
-    failures (connection errors, 429, 5xx) baked into the transport layer.
-    """
     session = requests.Session()
     retry_strategy = Retry(
         total=MAX_RETRIES,
@@ -115,16 +60,10 @@ def build_session() -> requests.Session:
 
 
 def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
-    """Fetch a URL and return a parsed BeautifulSoup tree.
-
-    Rotates User-Agent per request, applies a randomized polite delay,
-    and never raises -- returns None on unrecoverable failure so the
-    caller can decide whether to skip or abort.
-    """
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
-        "Accept-Language": "ne,en-US;q=0.9,en;q=0.8",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
     }
 
     try:
@@ -132,179 +71,195 @@ def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
         response = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return BeautifulSoup(response.text, "html.parser")
-
-    except requests.exceptions.HTTPError as e:
-        logger.error("HTTP error fetching %s: %s", url, e)
-    except requests.exceptions.ConnectionError as e:
-        logger.error("Connection error fetching %s: %s", url, e)
-    except requests.exceptions.Timeout as e:
-        logger.error("Timeout fetching %s: %s", url, e)
-    except requests.exceptions.RequestException as e:
-        logger.error("Unexpected request error fetching %s: %s", url, e)
-
+    except requests.exceptions.HTTPError as exc:
+        logger.error("HTTP error fetching %s: %s", url, exc)
+    except requests.exceptions.ConnectionError as exc:
+        logger.error("Connection error fetching %s: %s", url, exc)
+    except requests.exceptions.Timeout as exc:
+        logger.error("Timeout fetching %s: %s", url, exc)
+    except requests.exceptions.RequestException as exc:
+        logger.error("Unexpected request error fetching %s: %s", url, exc)
     return None
 
 
-# --------------------------------------------------------------------------
-# PARSING
-# --------------------------------------------------------------------------
-
 def safe_text(node) -> Optional[str]:
-    """Extract stripped text from a BeautifulSoup node, tolerating None."""
     if node is None:
         return None
-    text = node.get_text(strip=True)
+    text = node.get_text(" ", strip=True)
     return text or None
 
 
-def parse_listing_page(soup: BeautifulSoup, page_url: str) -> list[Notice]:
-    """Parse one listing page's table into a list of Notice records.
+def clean_url(href: Optional[str], page_url: str) -> Optional[str]:
+    if not href:
+        return None
+    href = href.strip()
+    if not href or href.startswith("javascript:") or href.startswith("mailto:") or href.startswith("tel:") or href.startswith("#"):
+        return None
+    full_url = urljoin(page_url, href)
+    return full_url.split("#", 1)[0]
 
-    Each row is wrapped in its own try/except so one malformed row can't
-    abort extraction of the rest of the page.
-    """
-    notices: list[Notice] = []
 
-    # The listing renders as a <table>; data rows are every <tr> that
-    # contains a link to a /content/<id>/<slug>/ detail page.
-    rows = soup.select("table tr")
+def get_page_title(soup: BeautifulSoup, default_url: str) -> str:
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    if title:
+        return title
+    h1 = soup.select_one("h1")
+    if h1:
+        return safe_text(h1) or default_url
+    return default_url
 
-    for row in rows:
-        try:
-            # Title + link: the शीर्षक column's <a> tag pointing at /content/
-            title_link = row.find("a", href=lambda h: h and "/content/" in h)
-            if title_link is None:
-                # Header row or a row without a content link -- skip silently.
-                continue
 
-            title = safe_text(title_link)
-            if not title:
-                logger.warning("Skipping row with empty title on %s", page_url)
-                continue
+def collect_text(soup: BeautifulSoup) -> str:
+    preferred = soup.select("main, article, section, .content, #content, .post, .entry")
+    root = preferred[0] if preferred else soup.body or soup
 
-            url = urljoin(page_url, title_link["href"])
+    text_chunks = []
+    for tag in root.select("h1, h2, h3, p, li, td, th, span"):
+        text = safe_text(tag)
+        if text and len(text) > 1:
+            text_chunks.append(text)
 
-            # Published date: the cell that follows the title cell.
-            # We look for the first <td> whose text contains typical Nepali
-            # date/month markers; falling back to the 3rd <td> if present.
-            cells = row.find_all("td")
-            published_date = None
-            for cell in cells:
-                text = safe_text(cell)
-                if text and any(ch.isdigit() for ch in text) and "," in text:
-                    # Dates on this site look like "भदौ ३, २०८३, बुधबार १०:२४"
-                    published_date = text
-                    break
-            if published_date is None and len(cells) >= 3:
-                published_date = safe_text(cells[2])
+    if not text_chunks:
+        all_text = safe_text(root)
+        if all_text:
+            return all_text
+        return ""
 
-            notices.append(Notice(
-                title=title,
-                published_date=published_date,
-                url=url,
-            ))
+    joined = "\n".join(text_chunks)
+    return "\n".join(dict.fromkeys(line.strip() for line in joined.splitlines() if line.strip()))
 
-        except Exception as e:
-            logger.warning("Failed to parse a row on %s: %s", page_url, e)
-            continue
 
-    # De-duplicate: the same /content/ link can appear more than once per
-    # row (title link + "कार्य" action link) if selectors overlap.
+def collect_links(soup: BeautifulSoup, page_url: str) -> list[str]:
+    links = []
     seen = set()
-    deduped = []
-    for n in notices:
-        if n.url not in seen:
-            seen.add(n.url)
-            deduped.append(n)
+    for tag in soup.select("a[href]"):
+        href = clean_url(tag.get("href"), page_url)
+        if href and href not in seen:
+            links.append(href)
+            seen.add(href)
+    return links
 
-    return deduped
+
+def find_next_page_url(soup: BeautifulSoup, current_url: str) -> Optional[str]:
+    next_link = soup.select_one("a[rel='next'], a[aria-label*='next' i], a.next, a.pagination-next")
+    if next_link:
+        next_href = clean_url(next_link.get("href"), current_url)
+        if next_href:
+            return next_href
+
+    for a in soup.select("a[href]"):
+        text = (a.get_text(" ", strip=True) or "").lower()
+        href = a.get("href")
+        if text.startswith("next") or "next" in text or text == ">":
+            cleaned = clean_url(href, current_url)
+            if cleaned:
+                return cleaned
+
+    parsed = urlparse(current_url)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key in ("page", "p", "pg"):
+        if key in params and params[key].isdigit():
+            next_page = int(params[key]) + 1
+            new_params = params.copy()
+            new_params[key] = str(next_page)
+            query = urlencode(new_params)
+            return parsed._replace(query=query).geturl()
+    return None
 
 
-# --------------------------------------------------------------------------
-# PAGINATION LOOP
-# --------------------------------------------------------------------------
+def parse_generic_page(soup: BeautifulSoup, page_url: str) -> ScrapedPage:
+    title = get_page_title(soup, page_url)
+    text = collect_text(soup)
+    links = collect_links(soup, page_url)
+    return ScrapedPage(title=title, url=page_url, text=text, links=links)
 
-def scrape_all(max_pages: Optional[int] = None) -> list[Notice]:
-    """Walk ?page=1, ?page=2, ... until a page returns zero notices, or
-    max_pages is reached. Robust to individual page failures: a failed
-    page is logged and the loop stops gracefully rather than crashing.
-    """
+
+def scrape_all(start_url: str, max_pages: Optional[int] = 1) -> list[ScrapedPage]:
     session = build_session()
-    all_notices: list[Notice] = []
-    page_num = 1
+    current_url = start_url
+    visited = set()
+    pages: list[ScrapedPage] = []
+    page_count = 0
 
-    while True:
-        if max_pages and page_num > max_pages:
+    while current_url and current_url not in visited:
+        if max_pages is not None and page_count >= max_pages:
             logger.info("Reached max_pages=%s limit, stopping.", max_pages)
             break
 
-        current_url = LISTING_URL_TEMPLATE.format(page=page_num)
-        logger.info("Fetching page %d: %s", page_num, current_url)
+        visited.add(current_url)
+        page_count += 1
+        logger.info("Fetching page %d: %s", page_count, current_url)
         soup = fetch_page(session, current_url)
-
         if soup is None:
-            logger.error("Giving up on page %d after retries exhausted; stopping.", page_num)
+            logger.error("Failed to fetch %s; stopping.", current_url)
             break
 
-        page_notices = parse_listing_page(soup, current_url)
+        page = parse_generic_page(soup, current_url)
+        pages.append(page)
 
-        if not page_notices:
-            logger.info("Page %d returned no notices -- assuming end of pagination.", page_num)
+        next_url = find_next_page_url(soup, current_url)
+        if not next_url:
             break
+        if next_url in visited:
+            break
+        current_url = next_url
 
-        logger.info("  -> extracted %d notices", len(page_notices))
-        all_notices.extend(page_notices)
-        page_num += 1
-
-    logger.info("Scrape complete: %d total notices across %d page(s).", len(all_notices), page_num - 1)
-    return all_notices
+    logger.info("Scrape complete: %d page(s) collected.", len(pages))
+    return pages
 
 
-# --------------------------------------------------------------------------
-# OUTPUT / STORAGE
-# --------------------------------------------------------------------------
-
-def save_csv(notices: list[Notice], filepath: str) -> None:
-    if not notices:
-        logger.warning("No notices to save (CSV).")
+def save_csv(pages: list[ScrapedPage], filepath: str) -> None:
+    if not pages:
+        logger.warning("No data to save (CSV).")
         return
-    fieldnames = list(asdict(notices[0]).keys())
+    fieldnames = ["title", "url", "text", "links", "scraped_at"]
     with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-        # utf-8-sig so Excel on Windows renders Nepali (Devanagari) text
-        # correctly instead of mangling it.
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for n in notices:
-            writer.writerow(asdict(n))
-    logger.info("Saved %d records to %s", len(notices), filepath)
+        for page in pages:
+            writer.writerow({
+                "title": page.title,
+                "url": page.url,
+                "text": page.text,
+                "links": " | ".join(page.links),
+                "scraped_at": page.scraped_at,
+            })
+    logger.info("Saved %d pages to %s", len(pages), filepath)
 
 
-def save_json(notices: list[Notice], filepath: str) -> None:
+def save_json(pages: list[ScrapedPage], filepath: str) -> None:
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump([asdict(n) for n in notices], f, indent=2, ensure_ascii=False)
-    logger.info("Saved %d records to %s", len(notices), filepath)
+        json.dump([asdict(page) for page in pages], f, indent=2, ensure_ascii=False)
+    logger.info("Saved %d pages to %s", len(pages), filepath)
 
 
-def save_sqlite(notices: list[Notice], filepath: str) -> None:
+def save_sqlite(pages: list[ScrapedPage], filepath: str) -> None:
     conn = sqlite3.connect(filepath)
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS notices (
+        CREATE TABLE IF NOT EXISTS scraped_pages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            published_date TEXT,
+            title TEXT,
             url TEXT,
+            text TEXT,
+            links TEXT,
             scraped_at TEXT
         )
     """)
     cur.executemany(
-        """INSERT INTO notices (title, published_date, url, scraped_at)
-           VALUES (:title, :published_date, :url, :scraped_at)""",
-        [asdict(n) for n in notices],
+        """INSERT INTO scraped_pages (title, url, text, links, scraped_at)
+           VALUES (:title, :url, :text, :links, :scraped_at)""",
+        [{
+            "title": page.title,
+            "url": page.url,
+            "text": page.text,
+            "links": " | ".join(page.links),
+            "scraped_at": page.scraped_at,
+        } for page in pages],
     )
     conn.commit()
     conn.close()
-    logger.info("Saved %d records to %s (table: notices)", len(notices), filepath)
+    logger.info("Saved %d pages to %s (table: scraped_pages)", len(pages), filepath)
 
 
 SAVERS = {
@@ -314,47 +269,40 @@ SAVERS = {
 }
 
 
-# --------------------------------------------------------------------------
-# CLI ENTRY POINT
-# --------------------------------------------------------------------------
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Scrape opmcm.gov.np Notices & News (सूचना तथा समाचार) into CSV/JSON/SQLite."
-    )
-    parser.add_argument("--output-format", choices=["csv", "json", "sqlite"], default="csv",
-                         help="Output format (default: csv)")
-    parser.add_argument("--output-file", default=None,
-                         help="Output file path (default: opmcm_notices.<ext>)")
-    parser.add_argument("--max-pages", type=int, default=None,
-                         help="Limit number of pages to scrape (default: all pages)")
-    parser.add_argument("--delay-min", type=float, default=DELAY_RANGE[0],
-                         help="Minimum delay between requests, seconds")
-    parser.add_argument("--delay-max", type=float, default=DELAY_RANGE[1],
-                         help="Maximum delay between requests, seconds")
+    parser = argparse.ArgumentParser(description="Generic website scraper for extracting page titles, text, and links.")
+    parser.add_argument("--url", required=True, help="Website URL to scrape")
+    parser.add_argument("--output-format", choices=["csv", "json", "sqlite"], default="json", help="Output format")
+    parser.add_argument("--output-file", default=None, help="Output file path")
+    parser.add_argument("--max-pages", type=int, default=1, help="Maximum number of pages to scrape (default: 1)")
+    parser.add_argument("--delay-min", type=float, default=DELAY_RANGE[0], help="Minimum delay between requests in seconds")
+    parser.add_argument("--delay-max", type=float, default=DELAY_RANGE[1], help="Maximum delay between requests in seconds")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-
     global DELAY_RANGE
     DELAY_RANGE = (args.delay_min, args.delay_max)
 
+    if not args.url:
+        logger.error("A website URL is required. Use --url https://example.com")
+        return 1
+
     default_ext = {"csv": "csv", "json": "json", "sqlite": "db"}[args.output_format]
-    output_file = args.output_file or f"opmcm_notices.{default_ext}"
+    output_file = args.output_file or f"scraped_site.{default_ext}"
 
     try:
-        notices = scrape_all(max_pages=args.max_pages)
+        pages = scrape_all(args.url, max_pages=args.max_pages)
     except KeyboardInterrupt:
         logger.warning("Interrupted by user.")
         return 1
 
-    if not notices:
-        logger.error("No notices were scraped. Exiting without writing output.")
+    if not pages:
+        logger.error("No data was scraped from %s", args.url)
         return 1
 
-    SAVERS[args.output_format](notices, output_file)
+    SAVERS[args.output_format](pages, output_file)
     return 0
 
 

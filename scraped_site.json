@@ -1,0 +1,11 @@
+[
+  {
+    "title": "Example Domain",
+    "url": "https://example.com",
+    "text": "Example Domain\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\nLearn more",
+    "links": [
+      "https://iana.org/domains/example"
+    ],
+    "scraped_at": "2026-09-18 14:43:45"
+  }
+]
