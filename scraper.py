@@ -1,19 +1,20 @@
-
-
 from __future__ import annotations
 
 import argparse
 import csv
 import json
+import ipaddress
 import logging
-import os
 import random
+import re
 import sqlite3
+import socket
 import sys
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Optional
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -21,24 +22,15 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
 ]
-
 MAX_RETRIES = 4
-<<<<<<< HEAD
 BACKOFF_FACTOR = 1.5
 REQUEST_TIMEOUT = 20
-DELAY_RANGE = (1.0, 2.5)
-=======
-BACKOFF_FACTOR = 1.5          # exponential backoff between retries
-REQUEST_TIMEOUT = 15          # seconds
-DEFAULT_DELAY_RANGE = (1.5, 3.0)      # polite randomized delay between page fetches
-                                       # (kept a bit higher than default -- this is
-                                       # a government server, be extra respectful)
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+MAX_RESPONSE_BYTES = 5_000_000
+DEFAULT_DELAY_RANGE = (1.0, 2.5)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger("generic_scraper")
@@ -58,9 +50,9 @@ def build_session() -> requests.Session:
     retry_strategy = Retry(
         total=MAX_RETRIES,
         backoff_factor=BACKOFF_FACTOR,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
-        raise_on_status=False,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET",),
+        respect_retry_after_header=True,
     )
     adapter = HTTPAdapter(max_retries=retry_strategy)
     session.mount("https://", adapter)
@@ -68,37 +60,64 @@ def build_session() -> requests.Session:
     return session
 
 
-def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
-<<<<<<< HEAD
-=======
-    """Fetch a URL and return a parsed BeautifulSoup tree.
+def validate_url(url: str) -> str:
+    parsed = urlparse(url.strip())
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("URL must be an absolute http:// or https:// URL")
+    if parsed.username or parsed.password:
+        raise ValueError("URLs containing embedded credentials are not supported")
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))}
+    except (OSError, ValueError) as exc:
+        raise ValueError("The URL host could not be resolved") from exc
+    for address in addresses:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+        if not ip.is_global:
+            raise ValueError("Local and private network targets are not allowed")
+    return url.strip()
 
-    Rotates User-Agent per request and never raises -- returns None on 
-    unrecoverable failure so the caller can decide whether to skip or abort.
-    
-    NOTE: Delay is applied in scrape_all() before calling this function,
-    not here, to allow proper control over delay timing and ranges.
-    """
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+
+def log_url(url: str) -> str:
+    """Keep queries and fragments, which may contain credentials, out of logs."""
+    parsed = urlparse(url)
+    return parsed._replace(query="", fragment="").geturl()
+
+
+def fetch_page(session: requests.Session, url: str) -> Optional[BeautifulSoup]:
     headers = {
         "User-Agent": random.choice(USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
     }
-
     try:
-        response = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-    except requests.exceptions.HTTPError as exc:
-        logger.error("HTTP error fetching %s: %s", url, exc)
-    except requests.exceptions.ConnectionError as exc:
-        logger.error("Connection error fetching %s: %s", url, exc)
-    except requests.exceptions.Timeout as exc:
-        logger.error("Timeout fetching %s: %s", url, exc)
+        for _ in range(6):
+            validate_url(url)
+            response = session.get(url, headers=headers, timeout=REQUEST_TIMEOUT, allow_redirects=False, stream=True)
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                response.close()
+                if not location:
+                    raise requests.exceptions.HTTPError("Redirect has no destination")
+                url = urljoin(url, location)
+                continue
+            response.raise_for_status()
+            if "html" not in response.headers.get("Content-Type", "").lower():
+                response.close()
+                raise ValueError("The server response is not HTML")
+            chunks = []
+            size = 0
+            for chunk in response.iter_content(65536):
+                size += len(chunk)
+                if size > MAX_RESPONSE_BYTES:
+                    response.close()
+                    raise ValueError("The page exceeds the 5 MB response limit")
+                chunks.append(chunk)
+            response.close()
+            return BeautifulSoup(b"".join(chunks), "html.parser")
+        raise requests.exceptions.TooManyRedirects("Too many redirects")
     except requests.exceptions.RequestException as exc:
-        logger.error("Unexpected request error fetching %s: %s", url, exc)
-    return None
+        logger.error("Request failed for %s: %s", log_url(url), exc.__class__.__name__)
+        return None
 
 
 def safe_text(node) -> Optional[str]:
@@ -112,40 +131,32 @@ def clean_url(href: Optional[str], page_url: str) -> Optional[str]:
     if not href:
         return None
     href = href.strip()
-    if not href or href.startswith("javascript:") or href.startswith("mailto:") or href.startswith("tel:") or href.startswith("#"):
+    if not href or href.startswith("#"):
         return None
-    full_url = urljoin(page_url, href)
-    return full_url.split("#", 1)[0]
+    full_url = urljoin(page_url, href).split("#", 1)[0]
+    parsed = urlparse(full_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return full_url
 
 
 def get_page_title(soup: BeautifulSoup, default_url: str) -> str:
-    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    title = safe_text(soup.title)
     if title:
         return title
-    h1 = soup.select_one("h1")
-    if h1:
-        return safe_text(h1) or default_url
-    return default_url
+    return safe_text(soup.select_one("h1")) or default_url
 
 
 def collect_text(soup: BeautifulSoup) -> str:
-    preferred = soup.select("main, article, section, .content, #content, .post, .entry")
-    root = preferred[0] if preferred else soup.body or soup
-
-    text_chunks = []
-    for tag in root.select("h1, h2, h3, p, li, td, th, span"):
+    root = soup.select_one("main, article, .content, #content, .post, .entry") or soup.body or soup
+    chunks = []
+    for tag in root.select("h1, h2, h3, p, li, td, th"):
         text = safe_text(tag)
         if text and len(text) > 1:
-            text_chunks.append(text)
-
-    if not text_chunks:
-        all_text = safe_text(root)
-        if all_text:
-            return all_text
-        return ""
-
-    joined = "\n".join(text_chunks)
-    return "\n".join(dict.fromkeys(line.strip() for line in joined.splitlines() if line.strip()))
+            chunks.append(text)
+    if not chunks:
+        return safe_text(root) or ""
+    return "\n".join(dict.fromkeys(chunks))
 
 
 def collect_links(soup: BeautifulSoup, page_url: str) -> list[str]:
@@ -160,317 +171,236 @@ def collect_links(soup: BeautifulSoup, page_url: str) -> list[str]:
 
 
 def find_next_page_url(soup: BeautifulSoup, current_url: str) -> Optional[str]:
-    next_link = soup.select_one("a[rel='next'], a[aria-label*='next' i], a.next, a.pagination-next")
+    next_link = soup.select_one("a[rel~='next'], a[aria-label*='next' i], a.next, a.pagination-next")
     if next_link:
-        next_href = clean_url(next_link.get("href"), current_url)
-        if next_href:
-            return next_href
+        next_url = clean_url(next_link.get("href"), current_url)
+        if next_url:
+            return next_url
 
-<<<<<<< HEAD
-    for a in soup.select("a[href]"):
-        text = (a.get_text(" ", strip=True) or "").lower()
-        href = a.get("href")
-        if text.startswith("next") or "next" in text or text == ">":
-            cleaned = clean_url(href, current_url)
-            if cleaned:
-                return cleaned
+    for link in soup.select("a[href]"):
+        label = (safe_text(link) or "").strip().lower()
+        if label == ">" or label.startswith("next"):
+            next_url = clean_url(link.get("href"), current_url)
+            if next_url:
+                return next_url
 
     parsed = urlparse(current_url)
-    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    for key in ("page", "p", "pg"):
-        if key in params and params[key].isdigit():
-            next_page = int(params[key]) + 1
-            new_params = params.copy()
-            new_params[key] = str(next_page)
-            query = urlencode(new_params)
-            return parsed._replace(query=query).geturl()
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    for index, (key, value) in enumerate(query):
+        if key.lower() in {"page", "p", "pg"} and value.isdigit():
+            query[index] = (key, str(int(value) + 1))
+            return urlunparse(parsed._replace(query=urlencode(query)))
+    match = re.search(r"(/page/)(\d+)(/?)$", parsed.path, re.IGNORECASE)
+    if match:
+        path = parsed.path[:match.start(2)] + str(int(match.group(2)) + 1) + match.group(3)
+        return urlunparse(parsed._replace(path=path))
+
     return None
 
 
 def parse_generic_page(soup: BeautifulSoup, page_url: str) -> ScrapedPage:
-    title = get_page_title(soup, page_url)
-    text = collect_text(soup)
-    links = collect_links(soup, page_url)
-    return ScrapedPage(title=title, url=page_url, text=text, links=links)
+    return ScrapedPage(
+        title=get_page_title(soup, page_url),
+        url=page_url,
+        text=collect_text(soup),
+        links=collect_links(soup, page_url),
+    )
 
 
-def scrape_all(start_url: str, max_pages: Optional[int] = 1) -> list[ScrapedPage]:
-=======
-def scrape_all(max_pages: Optional[int] = None, delay_range: tuple[float, float] = DEFAULT_DELAY_RANGE) -> list[Notice]:
-    """Walk ?page=1, ?page=2, ... until a page returns zero notices, or
-    max_pages is reached. Robust to individual page failures: a failed
-    page is logged and the loop stops gracefully rather than crashing.
-    
-    Delay is applied before each page fetch for polite scraping.
-    """
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+def extract_page(soup: BeautifulSoup, page_url: str, selectors: dict[str, str] | None = None) -> dict:
+    """Return normalized common page fields plus user-defined CSS selector fields."""
+    result = asdict(parse_generic_page(soup, page_url))
+    metadata = {"description": (soup.select_one('meta[name="description"]') or {}).get("content", ""),
+                "keywords": (soup.select_one('meta[name="keywords"]') or {}).get("content", ""),
+                "canonical": clean_url((soup.select_one('link[rel="canonical"]') or {}).get("href"), page_url),
+                "open_graph": {tag.get("property", "")[3:]: tag.get("content", "")
+                               for tag in soup.select('meta[property^="og:"][content]')}}
+    tables = []
+    for table in soup.select("table"):
+        rows = [[safe_text(cell) or "" for cell in row.select("th, td")] for row in table.select("tr")]
+        if rows:
+            tables.append(rows)
+    result.update({
+        "headings": [safe_text(node) for node in soup.select("h1, h2, h3") if safe_text(node)],
+        "link_details": [{"text": safe_text(node) or "", "url": clean_url(node.get("href"), page_url)}
+                         for node in soup.select("a[href]") if clean_url(node.get("href"), page_url)],
+        "images": [{"url": clean_url(node.get("src"), page_url), "alt": (node.get("alt") or "").strip()} for node in soup.select("img[src]")],
+        "tables": tables,
+        "metadata": metadata,
+        "structured_data": [node.string for node in soup.select('script[type="application/ld+json"]') if node.string],
+    })
+    if selectors:
+        selected = {}
+        for name, selector in selectors.items():
+            if not isinstance(name, str) or not name.strip() or not isinstance(selector, str) or len(selector) > 500:
+                raise ValueError("Each selector needs a field name and a CSS selector under 500 characters")
+            try:
+                nodes = soup.select(selector)
+            except Exception as exc:
+                raise ValueError(f"Invalid CSS selector for {name!r}") from exc
+            values = [safe_text(node) for node in nodes if safe_text(node)]
+            selected[name.strip()[:100]] = values[0] if len(values) == 1 else values
+        result["fields"] = selected
+    return result
+
+
+def scrape_all(
+    start_url: str,
+    max_pages: Optional[int] = 1,
+    delay_range: tuple[float, float] = DEFAULT_DELAY_RANGE,
+    selectors: dict[str, str] | None = None,
+    on_page=None,
+    cancelled=None,
+    errors: list[str] | None = None,
+) -> list[dict]:
+    current_url = validate_url(start_url)
     session = build_session()
-    current_url = start_url
-    visited = set()
-    pages: list[ScrapedPage] = []
-    page_count = 0
-
-    while current_url and current_url not in visited:
-        if max_pages is not None and page_count >= max_pages:
-            logger.info("Reached max_pages=%s limit, stopping.", max_pages)
-            break
-
-<<<<<<< HEAD
-        visited.add(current_url)
-        page_count += 1
-        logger.info("Fetching page %d: %s", page_count, current_url)
-=======
-        current_url = LISTING_URL_TEMPLATE.format(page=page_num)
-        logger.info("Fetching page %d: %s", page_num, current_url)
-        
-        # Apply polite delay before each fetch (delay_range honored here, not in fetch_page)
-        time.sleep(random.uniform(*delay_range))
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
-        soup = fetch_page(session, current_url)
-        if soup is None:
-            logger.error("Failed to fetch %s; stopping.", current_url)
-            break
-
-        page = parse_generic_page(soup, current_url)
-        pages.append(page)
-
-        next_url = find_next_page_url(soup, current_url)
-        if not next_url:
-            break
-        if next_url in visited:
-            break
-        current_url = next_url
-
+    visited: set[str] = set()
+    pages: list[dict] = []
+    robots_cache: dict[str, object] = {}
+    try:
+        while current_url and current_url not in visited:
+            if cancelled and cancelled():
+                break
+            if max_pages is not None and len(pages) >= max_pages:
+                logger.info("Reached max_pages=%d limit.", max_pages)
+                break
+            visited.add(current_url)
+            parsed = urlparse(current_url)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            if origin not in robots_cache:
+                from urllib.robotparser import RobotFileParser
+                rules = RobotFileParser()
+                rules.set_url(urljoin(origin, "/robots.txt"))
+                try:
+                    validate_url(rules.url)
+                    robot_response = session.get(rules.url, timeout=REQUEST_TIMEOUT, allow_redirects=False, stream=True)
+                    if robot_response.status_code == 200:
+                        body = robot_response.raw.read(512_001)
+                        rules.parse(body[:512_000].decode("utf-8", errors="replace").splitlines())
+                    else:
+                        rules.parse([])
+                    robot_response.close()
+                except (requests.exceptions.RequestException, ValueError):
+                    rules.parse([])
+                robots_cache[origin] = rules
+            if not robots_cache[origin].can_fetch("WebScraper/1.0", current_url):
+                logger.warning("robots.txt disallows %s", current_url)
+                current_url = None
+                continue
+            if pages:
+                time.sleep(random.uniform(*delay_range))
+            logger.info("Fetching page %d: %s", len(pages) + 1, log_url(current_url))
+            soup = fetch_page(session, current_url)
+            if soup is None:
+                if errors is not None:
+                    errors.append(f"Unable to fetch {log_url(current_url)}")
+                current_url = find_next_page_url(soup, current_url) if soup else None
+                continue
+            page_data = extract_page(soup, current_url, selectors)
+            pages.append(page_data)
+            if on_page:
+                on_page(page_data, len(pages))
+            next_url = find_next_page_url(soup, current_url)
+            if (not next_url or next_url in visited
+                    or urlparse(next_url).netloc.lower() != urlparse(start_url).netloc.lower()):
+                break
+            current_url = next_url
+    finally:
+        session.close()
     logger.info("Scrape complete: %d page(s) collected.", len(pages))
     return pages
 
 
-<<<<<<< HEAD
+def prepare_output(filepath: str) -> Path:
+    path = Path(filepath)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def save_csv(pages: list[ScrapedPage], filepath: str) -> None:
-    if not pages:
-        logger.warning("No data to save (CSV).")
-        return
-    fieldnames = ["title", "url", "text", "links", "scraped_at"]
-    with open(filepath, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+    path = prepare_output(filepath)
+    rows = [asdict(page) if isinstance(page, ScrapedPage) else page for page in pages]
+    fieldnames = list(dict.fromkeys(key for row in rows for key in row))
+    with path.open("w", newline="", encoding="utf-8-sig") as output:
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        for page in pages:
-            writer.writerow({
-                "title": page.title,
-                "url": page.url,
-                "text": page.text,
-                "links": " | ".join(page.links),
-                "scraped_at": page.scraped_at,
-            })
-    logger.info("Saved %d pages to %s", len(pages), filepath)
+        for row in rows:
+            row = {key: json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else value for key, value in row.items()}
+            writer.writerow(row)
+    logger.info("Saved %d page(s) to %s", len(pages), path)
 
 
 def save_json(pages: list[ScrapedPage], filepath: str) -> None:
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump([asdict(page) for page in pages], f, indent=2, ensure_ascii=False)
-    logger.info("Saved %d pages to %s", len(pages), filepath)
+    path = prepare_output(filepath)
+    with path.open("w", encoding="utf-8") as output:
+        json.dump([asdict(page) if isinstance(page, ScrapedPage) else page for page in pages], output, indent=2, ensure_ascii=False)
+    logger.info("Saved %d page(s) to %s", len(pages), path)
 
 
 def save_sqlite(pages: list[ScrapedPage], filepath: str) -> None:
-    conn = sqlite3.connect(filepath)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS scraped_pages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
-            url TEXT,
-            text TEXT,
-            links TEXT,
-            scraped_at TEXT
-        )
-    """)
-    cur.executemany(
-        """INSERT INTO scraped_pages (title, url, text, links, scraped_at)
-           VALUES (:title, :url, :text, :links, :scraped_at)""",
-        [{
-            "title": page.title,
-            "url": page.url,
-            "text": page.text,
-            "links": " | ".join(page.links),
-            "scraped_at": page.scraped_at,
-        } for page in pages],
-    )
-    conn.commit()
-    conn.close()
-    logger.info("Saved %d pages to %s (table: scraped_pages)", len(pages), filepath)
-=======
-# --------------------------------------------------------------------------
-# OUTPUT / STORAGE
-# --------------------------------------------------------------------------
-
-def save_csv(notices: list[Notice], filepath: str) -> None:
-    """Save notices to CSV file. UTF-8 (no BOM) for compatibility."""
-    if not notices:
-        logger.warning("No notices to save (CSV).")
-        return
-    
-    try:
-        # Create parent directory if it doesn't exist
-        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-        
-        fieldnames = list(asdict(notices[0]).keys())
-        with open(filepath, "w", newline="", encoding="utf-8") as f:
-            # Plain UTF-8 (no BOM) for maximum compatibility with data analysis tools
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            for n in notices:
-                writer.writerow(asdict(n))
-        logger.info("Saved %d records to %s", len(notices), filepath)
-    except IOError as e:
-        logger.error("Failed to save CSV to %s: %s", filepath, e)
-        raise
-
-
-def save_json(notices: list[Notice], filepath: str) -> None:
-    """Save notices to JSON file."""
-    if not notices:
-        logger.warning("No notices to save (JSON).")
-        return
-    
-    try:
-        # Create parent directory if it doesn't exist
-        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-        
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump([asdict(n) for n in notices], f, indent=2, ensure_ascii=False)
-        logger.info("Saved %d records to %s", len(notices), filepath)
-    except IOError as e:
-        logger.error("Failed to save JSON to %s: %s", filepath, e)
-        raise
-
-
-def save_sqlite(notices: list[Notice], filepath: str) -> None:
-    """Save notices to SQLite database. Properly handles connection lifecycle."""
-    if not notices:
-        logger.warning("No notices to save (SQLite).")
-        return
-    
-    try:
-        # Create parent directory if it doesn't exist
-        os.makedirs(os.path.dirname(filepath) or ".", exist_ok=True)
-        
-        conn = None
-        try:
-            conn = sqlite3.connect(filepath)
-            cur = conn.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS notices (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    published_date TEXT,
-                    url TEXT,
-                    scraped_at TEXT
-                )
-            """)
-            cur.executemany(
-                """INSERT INTO notices (title, published_date, url, scraped_at)
-                   VALUES (:title, :published_date, :url, :scraped_at)""",
-                [asdict(n) for n in notices],
+    path = prepare_output(filepath)
+    with sqlite3.connect(path) as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS scraped_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                text TEXT NOT NULL DEFAULT '',
+                links TEXT NOT NULL DEFAULT '',
+                scraped_at TEXT NOT NULL,
+                data TEXT NOT NULL DEFAULT '{}'
             )
-            conn.commit()
-            logger.info("Saved %d records to %s (table: notices)", len(notices), filepath)
-        finally:
-            # Always close connection, even if executemany fails
-            if conn is not None:
-                conn.close()
-    except (sqlite3.Error, IOError) as e:
-        logger.error("Failed to save SQLite to %s: %s", filepath, e)
-        raise
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+        """)
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(scraped_pages)")}
+        if "data" not in columns:
+            connection.execute("ALTER TABLE scraped_pages ADD COLUMN data TEXT NOT NULL DEFAULT '{}'")
+        connection.executemany(
+            "INSERT INTO scraped_pages (title, url, text, links, scraped_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+            [(row.get("title", ""), row.get("url", ""), row.get("text", ""), " | ".join(row.get("links", [])),
+              row.get("scraped_at", ""), json.dumps(row, ensure_ascii=False))
+             for row in (asdict(page) if isinstance(page, ScrapedPage) else page for page in pages)],
+        )
+    logger.info("Saved %d page(s) to %s (table: scraped_pages)", len(pages), path)
 
 
-SAVERS = {
-    "csv": save_csv,
-    "json": save_json,
-    "sqlite": save_sqlite,
-}
+SAVERS = {"csv": save_csv, "json": save_json, "sqlite": save_sqlite}
 
 
 def parse_args() -> argparse.Namespace:
-<<<<<<< HEAD
-    parser = argparse.ArgumentParser(description="Generic website scraper for extracting page titles, text, and links.")
-    parser.add_argument("--url", required=True, help="Website URL to scrape")
-    parser.add_argument("--output-format", choices=["csv", "json", "sqlite"], default="json", help="Output format")
-    parser.add_argument("--output-file", default=None, help="Output file path")
-    parser.add_argument("--max-pages", type=int, default=1, help="Maximum number of pages to scrape (default: 1)")
-    parser.add_argument("--delay-min", type=float, default=DELAY_RANGE[0], help="Minimum delay between requests in seconds")
-    parser.add_argument("--delay-max", type=float, default=DELAY_RANGE[1], help="Maximum delay between requests in seconds")
-=======
-    parser = argparse.ArgumentParser(
-        description="Scrape opmcm.gov.np Notices & News (सूचना तथा समाचार) into CSV/JSON/SQLite."
-    )
-    parser.add_argument("--output-format", choices=["csv", "json", "sqlite"], default="csv",
-                         help="Output format (default: csv)")
-    parser.add_argument("--output-file", default=None,
-                         help="Output file path (default: opmcm_notices.<ext>)")
-    parser.add_argument("--max-pages", type=int, default=None,
-                         help="Limit number of pages to scrape (default: all pages)")
-    parser.add_argument("--delay-min", type=float, default=DEFAULT_DELAY_RANGE[0],
-                         help="Minimum delay between requests, seconds (default: %.1f)" % DEFAULT_DELAY_RANGE[0])
-    parser.add_argument("--delay-max", type=float, default=DEFAULT_DELAY_RANGE[1],
-                         help="Maximum delay between requests, seconds (default: %.1f)" % DEFAULT_DELAY_RANGE[1])
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+    parser = argparse.ArgumentParser(description="Scrape page titles, text, and links from a website.")
+    parser.add_argument("--url", required=True, help="Starting website URL (http or https)")
+    parser.add_argument("--output-format", choices=SAVERS, default="json", help="Output format (default: json)")
+    parser.add_argument("--output-file", help="Output file path (default: scraped_site.<format>)")
+    parser.add_argument("--max-pages", type=int, default=1, help="Maximum pages to scrape; use 0 for no limit")
+    parser.add_argument("--delay-min", type=float, default=DEFAULT_DELAY_RANGE[0], help="Minimum delay between page requests")
+    parser.add_argument("--delay-max", type=float, default=DEFAULT_DELAY_RANGE[1], help="Maximum delay between page requests")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-<<<<<<< HEAD
-    global DELAY_RANGE
-    DELAY_RANGE = (args.delay_min, args.delay_max)
-=======
-
-    # Validate delay range before proceeding
-    if args.delay_min > args.delay_max:
-        logger.error("Invalid delay range: --delay-min (%.1f) must be <= --delay-max (%.1f)", 
-                     args.delay_min, args.delay_max)
-        return 1
-    
-    if args.delay_min < 0 or args.delay_max < 0:
-        logger.error("Delay values must be non-negative")
-        return 1
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
-
-    if not args.url:
-        logger.error("A website URL is required. Use --url https://example.com")
-        return 1
-
-    default_ext = {"csv": "csv", "json": "json", "sqlite": "db"}[args.output_format]
-    output_file = args.output_file or f"scraped_site.{default_ext}"
-
+    if args.max_pages < 0:
+        logger.error("--max-pages must be zero or greater")
+        return 2
+    if args.delay_min < 0 or args.delay_max < args.delay_min:
+        logger.error("Delay values must be non-negative and --delay-min must be <= --delay-max")
+        return 2
+    max_pages = args.max_pages or None
+    extension = {"csv": "csv", "json": "json", "sqlite": "db"}[args.output_format]
+    output_file = args.output_file or f"scraped_site.{extension}"
     try:
-<<<<<<< HEAD
-        pages = scrape_all(args.url, max_pages=args.max_pages)
-=======
-        delay_range = (args.delay_min, args.delay_max)
-        notices = scrape_all(max_pages=args.max_pages, delay_range=delay_range)
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+        pages = scrape_all(args.url, max_pages, (args.delay_min, args.delay_max))
+        if not pages:
+            logger.error("No pages were scraped from %s", args.url)
+            return 1
+        SAVERS[args.output_format](pages, output_file)
+    except (ValueError, OSError, sqlite3.Error, requests.exceptions.RequestException) as exc:
+        logger.error("Scraper failed: %s", exc)
+        return 1
     except KeyboardInterrupt:
-        logger.warning("Interrupted by user.")
-        return 1
-    except Exception as e:
-        logger.error("Scraping failed: %s", e)
-        return 1
-
-    if not pages:
-        logger.error("No data was scraped from %s", args.url)
-        return 1
-
-<<<<<<< HEAD
-    SAVERS[args.output_format](pages, output_file)
-=======
-    try:
-        SAVERS[args.output_format](notices, output_file)
-    except Exception as e:
-        logger.error("Failed to save output: %s", e)
-        return 1
-    
->>>>>>> da5f4863b3653bff1cf744e2714eb4e086bff424
+        logger.warning("Interrupted by user")
+        return 130
     return 0
 
 
