@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS SCRAPE AI — Production Web Intelligence Platform</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        },
+                        dark: {
+                            bg: '#0a0d14',
+                            surface: '#111622',
+                            card: '#161d2e',
+                            border: '#1e293b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom scrollbar & glassmorphism */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        .glass-panel {
+            background: rgba(22, 29, 46, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .light .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        .glow-indigo {
+            box-shadow: 0 0 25px -5px rgba(99, 102, 241, 0.25);
+        }
+        .code-pre {
+            font-family: 'JetBrains Mono', monospace;
+            tab-size: 2;
+        }
+    </style>
+</head>
+<body class="bg-[#0a0d14] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Top App Navigation Bar -->
+    <header class="h-16 border-b border-slate-800/80 bg-[#111622]/90 backdrop-blur sticky top-0 z-40 px-6 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-3">
+                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <i data-lucide="scan-eye" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <span class="font-bold tracking-tight text-lg text-white">NEXUS<span class="text-indigo-400">SCRAPE</span></span>
+                        <span class="text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded">AI PRO</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Production Data Intelligence</p>
+                </div>
+            </div>
+
+            <!-- Project Selector Dropdown -->
+            <div class="hidden md:flex items-center ml-8 pl-6 border-l border-slate-800 space-x-2">
+                <span class="text-xs text-slate-400">Project:</span>
+                <select id="project-selector" onchange="onProjectChange()" class="bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    <option value="">Default Project</option>
+                </select>
+                <button onclick="openNewProjectModal()" class="p-1.5 text-slate-400 hover:text-indigo-400 transition" title="Create New Project">
+                    <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right System Controls -->
+        <div class="flex items-center space-x-4">
+            <!-- Health Badge -->
+            <div id="system-health-badge" class="hidden sm:flex items-center space-x-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="health-text">Core Engine Online</span>
+            </div>
+
+            <!-- API Docs Link -->
+            <a href="/docs" target="_blank" class="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 flex items-center space-x-1.5 transition">
+                <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+                <span>OpenAPI Docs</span>
+            </a>
+
+            <!-- User Auth Profile Dropdown / Login Button -->
+            <div id="auth-container">
+                <button onclick="openAuthModal()" id="auth-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center space-x-2 shadow-md shadow-indigo-600/30 transition">
+                    <i data-lucide="user" class="w-3.5 h-3.5"></i>
+                    <span id="auth-btn-label">Sign In</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="w-64 border-r border-slate-800/80 bg-[#111622]/60 p-4 flex flex-col justify-between shrink-0">
+            <nav class="space-y-1.5">
+                <button onclick="switchTab('dashboard')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-indigo-400 bg-indigo-500/10 border border-indigo-500/20" data-tab="dashboard">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button onclick="switchTab('builder')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="builder">
+                    <i data-lucide="wand-2" class="w-4 h-4"></i>
+                    <span>Visual Builder</span>
+                </button>
+                <button onclick="switchTab('jobs')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="jobs">
+                    <i data-lucide="activity" class="w-4 h-4"></i>
+                    <span>Jobs & Live Logs</span>
+                </button>
+                <button onclick="switchTab('datasets')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="datasets">
+                    <i data-lucide="database" class="w-4 h-4"></i>
+                    <span>Datasets & Export</span>
+                </button>
+                <button onclick="switchTab('radar')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="radar">
+                    <i data-lucide="radar" class="w-4 h-4"></i>
+                    <span>Change Radar</span>
+                </button>
+                <button onclick="switchTab('rag')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="rag">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i>
+                    <span>Scrape-to-RAG</span>
+                </button>
+                <button onclick="switchTab('schedules')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="schedules">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    <span>Scheduled Jobs</span>
+                </button>
+                <button onclick="switchTab('api-keys')" class="nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50" data-tab="api-keys">
+                    <i data-lucide="key" class="w-4 h-4"></i>
+                    <span>API Credentials</span>
+                </button>
+            </nav>
+
+            <div class="border-t border-slate-800 pt-4 space-y-2">
+                <div class="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800/60 text-xs">
+                    <p class="font-medium text-slate-300">SSRF Protection</p>
+                    <p class="text-[11px] text-emerald-400 mt-0.5 flex items-center">
+                        <i data-lucide="shield-check" class="w-3 h-3 mr-1 inline"></i> Hardened Destination Filtering
+                    </p>
+                </div>
+                <button onclick="switchTab('help')" class="nav-item w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/40" data-tab="help">
+                    <i data-lucide="help-circle" class="w-3.5 h-3.5"></i>
+                    <span>Security & Ethics Guide</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+
+            <!-- TAB 1: DASHBOARD -->
+            <section id="tab-dashboard" class="tab-pane space-y-6">
+                <!-- Welcome Banner -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between p-6 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-slate-900 to-slate-900 border border-indigo-500/20 glow-indigo">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Autonomous Web Intelligence Dashboard</h1>
+                        <p class="text-sm text-slate-400 mt-1">Real-time crawling orchestration, JavaScript rendering, and AI-assisted schema synthesis.</p>
+                    </div>
+                    <div class="mt-4 md:mt-0 flex items-center space-x-3">
+                        <button onclick="switchTab('builder')" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-2 shadow-lg shadow-indigo-600/30 transition">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span>New Scrape Workflow</span>
+                        </button>
+                        <button onclick="refreshDashboard()" class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition" title="Refresh Metrics">
+                            <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Metrics Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="p-5 rounded-2xl glass-panel border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-medium text-slate-400">Total Crawl Jobs</span>
+                            <span class="p-2 rounded-xl bg-indigo-500/10 text-indigo-400"><i data-lucide="cpu" class="w-4 h-4"></i></span>
+                        </div>
+                        <div class="text-3xl font-bold text-white mt-3" id="stat-total-jobs">0</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Processed across projects</p>
+                    </div>
+                    <div class="p-5 rounded-2xl glass-panel border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-medium text-slate-400">Records Collected</span>
+                            <span class="p-2 rounded-xl bg-cyan-500/10 text-cyan-400"><i data-lucide="layers" class="w-4 h-4"></i></span>
+                        </div>
+                        <div class="text-3xl font-bold text-white mt-3" id="stat-total-records">0</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Validated & cleaned rows</p>
+                    </div>
+                    <div class="p-5 rounded-2xl glass-panel border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-medium text-slate-400">Average Quality Score</span>
+                            <span class="p-2 rounded-xl bg-emerald-500/10 text-emerald-400"><i data-lucide="award" class="w-4 h-4"></i></span>
+                        </div>
+                        <div class="text-3xl font-bold text-white mt-3" id="stat-avg-quality">94.2%</div>
+                        <p class="text-[11px] text-emerald-400 mt-1">Grade A Completeness & Validity</p>
+                    </div>
+                    <div class="p-5 rounded-2xl glass-panel border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-medium text-slate-400">Success Rate</span>
+                            <span class="p-2 rounded-xl bg-amber-500/10 text-amber-400"><i data-lucide="check-circle" class="w-4 h-4"></i></span>
+                        </div>
+                        <div class="text-3xl font-bold text-white mt-3" id="stat-success-rate">100%</div>
+                        <p class="text-[11px] text-slate-500 mt-1">Compliant crawl executions</p>
+                    </div>
+                </div>
+
+                <!-- Charts & Activity Row -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 p-6 rounded-2xl glass-panel border border-slate-800">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 class="text-sm font-semibold text-white">Crawl Throughput & Record Velocity</h3>
+                                <p class="text-xs text-slate-400">Structured data extractions per job run</p>
+                            </div>
+                        </div>
+                        <div class="h-64">
+                            <canvas id="jobsChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="p-6 rounded-2xl glass-panel border border-slate-800 flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-sm font-semibold text-white mb-1">Architecture & Capabilities</h3>
+                            <p class="text-xs text-slate-400 mb-4">Active operational subsystems</p>
+                            
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                                    <span class="text-slate-300">Playwright Browser Worker</span>
+                                    <span class="text-emerald-400 font-medium">Headless Chromium</span>
+                                </div>
+                                <div class="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                                    <span class="text-slate-300">AI Schema Engine</span>
+                                    <span class="text-indigo-400 font-medium">Heuristic + OpenAI/Gemini</span>
+                                </div>
+                                <div class="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                                    <span class="text-slate-300">Robots.txt & Delays</span>
+                                    <span class="text-emerald-400 font-medium">Enforced</span>
+                                </div>
+                                <div class="flex items-center justify-between text-xs p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                                    <span class="text-slate-300">Storage Backend</span>
+                                    <span class="text-slate-300 font-medium" id="db-type-badge">SQLite (Zero Config)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-4 border-t border-slate-800">
+                            <button onclick="switchTab('builder')" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-indigo-400 transition">
+                                Launch Visual Extraction Builder &rarr;
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Jobs Table -->
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-white">Recent Crawl Jobs</h3>
+                        <button onclick="switchTab('jobs')" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">View All &rarr;</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="text-slate-400 border-b border-slate-800 bg-slate-900/40">
+                                <tr>
+                                    <th class="py-3 px-4">Job ID</th>
+                                    <th class="py-3 px-4">Configuration</th>
+                                    <th class="py-3 px-4">Status</th>
+                                    <th class="py-3 px-4">Pages</th>
+                                    <th class="py-3 px-4">Records</th>
+                                    <th class="py-3 px-4">Quality</th>
+                                    <th class="py-3 px-4">Duration</th>
+                                    <th class="py-3 px-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboard-recent-jobs-body" class="divide-y divide-slate-800/60">
+                                <tr><td colspan="8" class="text-center py-6 text-slate-500">No jobs recorded yet. Launch a new workflow in the Visual Builder.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: VISUAL EXTRACTION BUILDER -->
+            <section id="tab-builder" class="tab-pane hidden space-y-6">
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold text-white">Visual Selector Builder & Schema Autopilot</h2>
+                            <p class="text-xs text-slate-400">Inspect target web pages, synthesize CSS/XPath extraction rules, or let AI propose schemas automatically.</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onclick="runAiSchemaSuggestion()" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-purple-600/30 transition">
+                                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                                <span>AI Schema Autopilot</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- URL & Fetch Mode Bar -->
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-2">
+                        <div class="lg:col-span-8 flex space-x-2">
+                            <input id="builder-url-input" type="url" placeholder="https://news.ycombinator.com or https://example.com" value="https://example.com" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div class="lg:col-span-2">
+                            <select id="builder-mode-select" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <option value="http">Fast HTTP Client</option>
+                                <option value="browser">Headless Browser (JS Hydrated)</option>
+                            </select>
+                        </div>
+                        <div class="lg:col-span-2">
+                            <button onclick="inspectTargetWebsite()" id="builder-inspect-btn" class="w-full h-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl flex items-center justify-center space-x-2 transition shadow-md shadow-indigo-600/30">
+                                <i data-lucide="search" class="w-4 h-4"></i>
+                                <span>Inspect & Load</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Inspection Results Banner (robots.txt, title, sitemaps) -->
+                    <div id="builder-inspect-result-card" class="hidden p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 text-xs">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="font-semibold text-white" id="inspect-title-display">Title: Example Domain</span>
+                            <div class="flex items-center space-x-2">
+                                <span id="inspect-robots-pill" class="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">robots.txt: Allowed</span>
+                                <span id="inspect-status-pill" class="px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Status: 200 OK</span>
+                            </div>
+                        </div>
+                        <div class="text-slate-400 text-[11px] flex flex-wrap gap-4 pt-1 border-t border-slate-800">
+                            <span id="inspect-sitemaps-count">Sitemaps found: 1</span>
+                            <span id="inspect-links-count">Discovered links: 12</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Two-Column Builder Workspace -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Left Column: Schema Rules Configuration -->
+                    <div class="lg:col-span-6 p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-white">Extraction Fields & Selectors</h3>
+                            <button onclick="addSelectorRow()" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center space-x-1">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                                <span>Add Field</span>
+                            </button>
+                        </div>
+
+                        <!-- Selectors Container -->
+                        <div id="selectors-container" class="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                            <!-- Injected selector row templates -->
+                        </div>
+
+                        <!-- Test & Execute Actions -->
+                        <div class="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center space-x-2">
+                                <label class="text-xs text-slate-400">Max Pages:</label>
+                                <input id="builder-max-pages" type="number" value="5" min="1" max="100" class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white">
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button onclick="testConfiguredSelectors()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition">
+                                    Test Match
+                                </button>
+                                <button onclick="launchScrapeWorkflow()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition shadow-md shadow-emerald-600/30">
+                                    Start Crawl Job
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Live Selector Test Output & HTML Preview -->
+                    <div class="lg:col-span-6 p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-white">Live Match & Sample Records</h3>
+                            <span class="text-xs text-slate-500 font-mono" id="test-matches-count">0 items matched</span>
+                        </div>
+
+                        <!-- Test Results Preview Area -->
+                        <div id="test-results-view" class="h-[280px] bg-slate-950/80 rounded-xl border border-slate-800 p-3 overflow-y-auto font-mono text-xs text-slate-300">
+                            <div class="text-slate-500 italic p-4 text-center">Click "Test Match" or "Inspect & Load" to evaluate CSS and XPath selectors against the target DOM.</div>
+                        </div>
+
+                        <!-- HTML Snippet Inspector -->
+                        <div>
+                            <span class="text-xs font-medium text-slate-400 block mb-1.5">Retrieved DOM Preview</span>
+                            <div id="dom-preview-container" class="h-[120px] bg-slate-950 rounded-xl border border-slate-800 p-2 overflow-y-auto text-[11px] font-mono text-slate-400 code-pre">
+                                &lt;!-- Inspection HTML preview will appear here --&gt;
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: JOBS & LIVE LOGS -->
+            <section id="tab-jobs" class="tab-pane hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl glass-panel border border-slate-800">
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Job Orchestration & Live SSE Monitoring</h2>
+                        <p class="text-xs text-slate-400">Stream background execution progress, server-side logs, and trigger Smart Retry Advisor.</p>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="loadJobsList()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center space-x-1.5">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                            <span>Refresh Jobs</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Jobs Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div class="lg:col-span-7 p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                        <h3 class="text-sm font-semibold text-white">Execution History</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="text-slate-400 border-b border-slate-800 bg-slate-900/40">
+                                    <tr>
+                                        <th class="py-2.5 px-3">Job ID</th>
+                                        <th class="py-2.5 px-3">Status</th>
+                                        <th class="py-2.5 px-3">Pages</th>
+                                        <th class="py-2.5 px-3">Records</th>
+                                        <th class="py-2.5 px-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="jobs-table-body" class="divide-y divide-slate-800/60">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Right Drawer: Live Stream & Advisor -->
+                    <div class="lg:col-span-5 p-6 rounded-2xl glass-panel border border-slate-800 flex flex-col justify-between space-y-4">
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <h3 class="text-sm font-semibold text-white flex items-center space-x-2">
+                                    <span class="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+                                    <span id="active-job-title-display">Live Job Stream</span>
+                                </h3>
+                                <span id="active-job-status-pill" class="text-[10px] px-2 py-0.5 rounded font-semibold bg-slate-800 text-slate-300">Idle</span>
+                            </div>
+
+                            <!-- Live Progress Bar -->
+                            <div class="w-full bg-slate-900 rounded-full h-2 mb-3 overflow-hidden border border-slate-800">
+                                <div id="live-progress-bar" class="bg-indigo-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+
+                            <!-- Console Output -->
+                            <div id="live-logs-console" class="h-60 bg-slate-950 rounded-xl border border-slate-800 p-3 overflow-y-auto font-mono text-[11px] text-slate-400 space-y-1">
+                                <p class="text-slate-600">Select a job to stream execution logs.</p>
+                            </div>
+                        </div>
+
+                        <!-- Smart Retry Advisor Card -->
+                        <div id="advisor-card" class="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/20 text-xs space-y-1.5">
+                            <div class="flex items-center space-x-1.5 text-indigo-400 font-semibold">
+                                <i data-lucide="compass" class="w-3.5 h-3.5"></i>
+                                <span>Smart Retry Advisor</span>
+                            </div>
+                            <p id="advisor-recommendation-text" class="text-slate-300 text-[11px]">No issues detected for current job.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: DATASETS & EXPORT -->
+            <section id="tab-datasets" class="tab-pane hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl glass-panel border border-slate-800">
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Extracted Datasets & Multi-Format Exporter</h2>
+                        <p class="text-xs text-slate-400">Search collected records, verify Data Quality scores, and download production-ready CSV, JSON, Excel, and JSONL.</p>
+                    </div>
+                    <!-- Dataset selector -->
+                    <div class="flex items-center space-x-2">
+                        <select id="datasets-selector" onchange="onDatasetSelected()" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                            <option value="">Select a Dataset...</option>
+                        </select>
+                        <button onclick="loadDatasets()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300">
+                            <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quality Score Breakdown Card -->
+                <div id="dataset-quality-card" class="grid grid-cols-1 md:grid-cols-4 gap-4 p-5 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <div class="flex items-center space-x-4 border-r border-slate-800/80 pr-4">
+                        <div class="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex flex-col items-center justify-center">
+                            <span class="text-lg font-bold text-indigo-400" id="dq-grade">A</span>
+                            <span class="text-[9px] text-slate-400 uppercase tracking-wider">Grade</span>
+                        </div>
+                        <div>
+                            <span class="text-2xl font-bold text-white" id="dq-score">95.0%</span>
+                            <p class="text-xs text-slate-400">Data Quality Score</p>
+                        </div>
+                    </div>
+                    <div class="p-2">
+                        <span class="text-xs text-slate-400">Completeness</span>
+                        <div class="text-lg font-semibold text-white mt-0.5" id="dq-completeness">96.2%</div>
+                        <p class="text-[10px] text-slate-500">Non-null cell ratio (40% wt)</p>
+                    </div>
+                    <div class="p-2">
+                        <span class="text-xs text-slate-400">Type Validity</span>
+                        <div class="text-lg font-semibold text-white mt-0.5" id="dq-validity">98.0%</div>
+                        <p class="text-[10px] text-slate-500">Semantic conformity (35% wt)</p>
+                    </div>
+                    <div class="p-2">
+                        <span class="text-xs text-slate-400">Uniqueness</span>
+                        <div class="text-lg font-semibold text-white mt-0.5" id="dq-uniqueness">92.5%</div>
+                        <p class="text-[10px] text-slate-500">Distinct records (25% wt)</p>
+                    </div>
+                </div>
+
+                <!-- Records Explorer & Export Toolbar -->
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="flex items-center space-x-2 flex-1 max-w-md">
+                            <input id="dataset-search-input" onkeyup="if(event.key==='Enter') searchDatasetRecords()" type="text" placeholder="Search extracted records..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                            <button onclick="searchDatasetRecords()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold">Search</button>
+                        </div>
+
+                        <!-- Export Buttons -->
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs text-slate-400 mr-1">Export:</span>
+                            <button onclick="downloadDatasetExport('json')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">JSON</button>
+                            <button onclick="downloadDatasetExport('csv')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">CSV</button>
+                            <button onclick="downloadDatasetExport('xlsx')" class="px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-xs font-medium text-emerald-400 border border-emerald-500/30">Excel (.xlsx)</button>
+                            <button onclick="downloadDatasetExport('jsonl')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700">JSONL</button>
+                        </div>
+                    </div>
+
+                    <!-- Records Table -->
+                    <div class="overflow-x-auto min-h-[220px]">
+                        <table class="w-full text-left text-xs">
+                            <thead class="text-slate-400 border-b border-slate-800 bg-slate-900/40" id="records-table-head">
+                                <tr>
+                                    <th class="py-2.5 px-3">Index</th>
+                                    <th class="py-2.5 px-3">Source URL</th>
+                                    <th class="py-2.5 px-3">Data</th>
+                                </tr>
+                            </thead>
+                            <tbody id="records-table-body" class="divide-y divide-slate-800/60">
+                                <tr><td colspan="3" class="text-center py-6 text-slate-500">Select a dataset to view records.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+                        <span id="records-pagination-info">Showing 0 of 0 records</span>
+                        <div class="flex items-center space-x-1">
+                            <button onclick="changeDatasetPage(-1)" class="px-3 py-1 rounded bg-slate-800 text-slate-200 hover:bg-slate-700">&larr; Prev</button>
+                            <button onclick="changeDatasetPage(1)" class="px-3 py-1 rounded bg-slate-800 text-slate-200 hover:bg-slate-700">Next &rarr;</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: WEBSITE CHANGE RADAR -->
+            <section id="tab-radar" class="tab-pane hidden space-y-6">
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Website Change Radar & Diff Viewer</h2>
+                        <p class="text-xs text-slate-400">Compare successive scrape snapshots to detect newly added, deleted, or price/content-modified records.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                        <div>
+                            <label class="text-xs font-medium text-slate-400 block mb-1">Baseline Snapshot (Old)</label>
+                            <select id="radar-old-dataset" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                                <!-- Option list -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-slate-400 block mb-1">Target Snapshot (New)</label>
+                            <select id="radar-new-dataset" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                                <!-- Option list -->
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="runRadarDiff()" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+                                <i data-lucide="git-compare" class="w-4 h-4"></i>
+                                <span>Compute Diff Radar</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Diff Results View -->
+                <div id="radar-results-card" class="hidden p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                            <span class="text-xl font-bold text-emerald-400" id="diff-added-count">0</span>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Records Added</p>
+                        </div>
+                        <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-center">
+                            <span class="text-xl font-bold text-rose-400" id="diff-removed-count">0</span>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Records Removed</p>
+                        </div>
+                        <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-center">
+                            <span class="text-xl font-bold text-amber-400" id="diff-modified-count">0</span>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Records Modified</p>
+                        </div>
+                        <div class="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 text-center">
+                            <span class="text-xl font-bold text-slate-300" id="diff-unchanged-count">0</span>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Unchanged</p>
+                        </div>
+                    </div>
+
+                    <!-- Modified Detail Inspector -->
+                    <div>
+                        <h4 class="text-xs font-semibold text-slate-300 mb-2">Field-Level Changes Sample</h4>
+                        <div id="diff-detail-container" class="bg-slate-950 rounded-xl border border-slate-800 p-4 font-mono text-xs text-slate-300 space-y-2 max-h-64 overflow-y-auto">
+                            <!-- Injected diff items -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 6: SCRAPE-TO-RAG -->
+            <section id="tab-rag" class="tab-pane hidden space-y-6">
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Scrape-to-RAG Pipeline & Semantic Retrieval</h2>
+                        <p class="text-xs text-slate-400">Transform scraped web pages into sliding-window passages with source URLs and test similarity retrieval in real-time.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                        <div>
+                            <label class="text-xs font-medium text-slate-400 block mb-1">Source Dataset</label>
+                            <select id="rag-dataset-select" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                                <!-- Option list -->
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-slate-400 block mb-1">Pipeline Name</label>
+                            <input id="rag-name-input" type="text" value="Knowledge Base 1" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="createRagPipeline()" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/30 transition">
+                                Build RAG Pipeline
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Semantic Query Testing Area -->
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <h3 class="text-sm font-semibold text-white">Semantic Similarity Search & Source Citations</h3>
+                    <div class="flex items-center space-x-2">
+                        <input id="rag-query-input" type="text" placeholder="Enter question or query e.g. 'article author' or 'product details'..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white">
+                        <button onclick="testRagQuery()" class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold">Retrieve Citations</button>
+                    </div>
+
+                    <div id="rag-query-results" class="space-y-3 min-h-[140px] pt-2">
+                        <div class="text-slate-500 italic text-xs text-center p-6">Build a pipeline and execute a query to view semantic chunk citations.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 7: SCHEDULED JOBS -->
+            <section id="tab-schedules" class="tab-pane hidden space-y-6">
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold text-white">Scheduled Monitoring & Cron Automation</h2>
+                            <p class="text-xs text-slate-400">Configure recurring background scraping runs with polite delays and change alerts.</p>
+                        </div>
+                        <button onclick="openNewScheduleModal()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                            <span>New Schedule</span>
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="text-slate-400 border-b border-slate-800 bg-slate-900/40">
+                                <tr>
+                                    <th class="py-2.5 px-3">Name</th>
+                                    <th class="py-2.5 px-3">Interval</th>
+                                    <th class="py-2.5 px-3">Status</th>
+                                    <th class="py-2.5 px-3">Next Execution</th>
+                                    <th class="py-2.5 px-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="schedules-table-body" class="divide-y divide-slate-800/60">
+                                <tr><td colspan="5" class="text-center py-6 text-slate-500">No scheduled crawlers configured.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 8: API KEYS -->
+            <section id="tab-api-keys" class="tab-pane hidden space-y-6">
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold text-white">API Credentials & Token Management</h2>
+                            <p class="text-xs text-slate-400">Generate hashed API keys with prefix (<code class="text-indigo-300">nxs_...</code>) for automated ingestion via REST or cURL.</p>
+                        </div>
+                        <button onclick="createNewApiKey()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center space-x-1.5 transition">
+                            <i data-lucide="key" class="w-3.5 h-3.5"></i>
+                            <span>Generate API Key</span>
+                        </button>
+                    </div>
+
+                    <!-- Newly created key display banner -->
+                    <div id="new-key-banner" class="hidden p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 space-y-1">
+                        <p class="font-semibold">Save your API Key now. It will not be shown again:</p>
+                        <p class="font-mono bg-slate-950 p-2 rounded text-emerald-400" id="new-key-value"></p>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="text-slate-400 border-b border-slate-800 bg-slate-900/40">
+                                <tr>
+                                    <th class="py-2.5 px-3">Name</th>
+                                    <th class="py-2.5 px-3">Prefix</th>
+                                    <th class="py-2.5 px-3">Created</th>
+                                    <th class="py-2.5 px-3">Last Used</th>
+                                    <th class="py-2.5 px-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="api-keys-table-body" class="divide-y divide-slate-800/60">
+                                <tr><td colspan="5" class="text-center py-6 text-slate-500">No API keys created yet.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 9: SECURITY & HELP -->
+            <section id="tab-help" class="tab-pane hidden space-y-6">
+                <div class="p-6 rounded-2xl glass-panel border border-slate-800 space-y-4">
+                    <h2 class="text-lg font-bold text-white">Security Architecture & Ethical Crawling Policy</h2>
+                    <p class="text-xs text-slate-400">NEXUS SCRAPE AI is engineered strictly for authorized, polite data intelligence.</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
+                        <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2">
+                            <h4 class="font-semibold text-indigo-400 flex items-center">
+                                <i data-lucide="shield" class="w-4 h-4 mr-1.5"></i> SSRF Defense Enforcement
+                            </h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                All outbound requests validate destination DNS resolutions against private IPv4/IPv6 networks, loopback addresses, and cloud instance metadata (AWS 169.254.169.254, GCP metadata.google.internal). Redirects are individually re-evaluated to thwart DNS rebinding.
+                            </p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2">
+                            <h4 class="font-semibold text-indigo-400 flex items-center">
+                                <i data-lucide="file-text" class="w-4 h-4 mr-1.5"></i> Strict robots.txt Compliance
+                            </h4>
+                            <p class="text-slate-300 leading-relaxed">
+                                The engine inspects target <code class="text-indigo-300">robots.txt</code> and honors User-Agent rules and Crawl-delay directives. Sites or paths flagged as disallowed are automatically skipped without overriding access controls.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- AUTH MODAL -->
+    <div id="auth-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+        <div class="w-full max-w-sm rounded-2xl bg-[#111622] border border-slate-800 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-bold text-white" id="auth-modal-title">Sign In to NEXUS</h3>
+                <button onclick="closeAuthModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Email Address</label>
+                    <input id="auth-email" type="email" value="admin@nexusscrape.ai" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">Password</label>
+                    <input id="auth-password" type="password" value="NexusAdmin2026!" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                </div>
+                <div id="auth-fullname-container" class="hidden">
+                    <label class="text-xs text-slate-400 block mb-1">Full Name</label>
+                    <input id="auth-fullname" type="text" placeholder="Dr. Alan Vance" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white">
+                </div>
+                <button onclick="submitAuth()" id="auth-submit-btn" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition">
+                    Sign In
+                </button>
+                <div class="text-center">
+                    <button onclick="toggleAuthMode()" id="auth-toggle-mode-btn" class="text-xs text-indigo-400 hover:text-indigo-300">
+                        Need an account? Register &rarr;
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- APPLICATION LOGIC JAVASCRIPT -->
+    <script>
+        // State
+        let token = localStorage.getItem('nexus_token') || '';
+        let currentUser = null;
+        let projects = [];
+        let activeProjectId = '';
+        let jobsList = [];
+        let datasetsList = [];
+        let currentDatasetRecords = [];
+        let currentDatasetPage = 1;
+        let activeStreamEventSource = null;
+        let isRegisterMode = false;
+        let chartInstance = null;
+
+        // Default Selectors in Builder
+        let activeSelectors = [
+            { name: "title", selector: "h1, title", selector_type: "css", extract_type: "text", attribute_name: "", is_multiple: false },
+            { name: "article_url", selector: "a", selector_type: "css", extract_type: "attr", attribute_name: "href", is_multiple: false }
+        ];
+
+        // Init on DOM Load
+        document.addEventListener('DOMContentLoaded', async () => {
+            lucide.createIcons();
+            initChart();
+            renderSelectors();
+            await checkHealth();
+            if (token) {
+                await fetchCurrentUser();
+            } else {
+                // Auto-login or create default demo user
+                await autoLoginDemoUser();
+            }
+            await loadProjects();
+            await loadJobsList();
+            await loadDatasets();
+        });
+
+        // Initialize Chart.js
+        function initChart() {
+            const ctx = document.getElementById('jobsChart')?.getContext('2d');
+            if (!ctx) return;
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Job #1', 'Job #2', 'Job #3', 'Job #4', 'Job #5', 'Job #6'],
+                    datasets: [{
+                        label: 'Records Extracted',
+                        data: [12, 19, 28, 45, 62, 85],
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        fill: true,
+                        tension: 0.35
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+        }
+
+        // Tab Switching
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.add('hidden'));
+            const target = document.getElementById(`tab-${tabId}`);
+            if (target) target.classList.remove('hidden');
+
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                if (btn.getAttribute('data-tab') === tabId) {
+                    btn.className = "nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-indigo-400 bg-indigo-500/10 border border-indigo-500/20";
+                } else {
+                    btn.className = "nav-item w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
+                }
+            });
+            lucide.createIcons();
+        }
+
+        // API Helpers
+        function getAuthHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
+            return headers;
+        }
+
+        async function checkHealth() {
+            try {
+                const res = await fetch('/api/v1/health');
+                const data = await res.json();
+                if (data.status === 'healthy') {
+                    document.getElementById('health-text').innerText = `Engine Online (v${data.version})`;
+                }
+            } catch (e) {
+                document.getElementById('health-text').innerText = 'Offline';
+            }
+        }
+
+        async function autoLoginDemoUser() {
+            try {
+                // Try logging in
+                const res = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'admin@nexusscrape.ai', password: 'NexusAdmin2026!' })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    token = data.access_token;
+                    localStorage.setItem('nexus_token', token);
+                    currentUser = data.user;
+                    updateAuthUI();
+                } else {
+                    // Try registering
+                    const regRes = await fetch('/api/v1/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: 'admin@nexusscrape.ai', password: 'NexusAdmin2026!', full_name: 'Lead Scrape Architect' })
+                    });
+                    if (regRes.ok) {
+                        await autoLoginDemoUser();
+                    }
+                }
+            } catch (e) {
+                console.log("Auth setup:", e);
+            }
+        }
+
+        async function fetchCurrentUser() {
+            try {
+                const res = await fetch('/api/v1/auth/me', { headers: getAuthHeaders() });
+                if (res.ok) {
+                    currentUser = await res.json();
+                    updateAuthUI();
+                } else {
+                    token = '';
+                    localStorage.removeItem('nexus_token');
+                    updateAuthUI();
+                }
+            } catch (e) {}
+        }
+
+        function updateAuthUI() {
+            const btnLabel = document.getElementById('auth-btn-label');
+            if (currentUser) {
+                btnLabel.innerText = currentUser.email.split('@')[0];
+            } else {
+                btnLabel.innerText = "Sign In";
+            }
+        }
+
+        function openAuthModal() {
+            document.getElementById('auth-modal').classList.remove('hidden');
+            document.getElementById('auth-modal').classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeAuthModal() {
+            document.getElementById('auth-modal').classList.add('hidden');
+            document.getElementById('auth-modal').classList.remove('flex');
+        }
+
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('auth-modal-title').innerText = isRegisterMode ? "Create Account" : "Sign In to NEXUS";
+            document.getElementById('auth-fullname-container').classList.toggle('hidden', !isRegisterMode);
+            document.getElementById('auth-submit-btn').innerText = isRegisterMode ? "Register & Sign In" : "Sign In";
+            document.getElementById('auth-toggle-mode-btn').innerText = isRegisterMode ? "Already have an account? Sign In →" : "Need an account? Register →";
+        }
+
+        async function submitAuth() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+            const fullName = document.getElementById('auth-fullname').value;
+
+            if (isRegisterMode) {
+                const res = await fetch('/api/v1/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, full_name: fullName })
+                });
+                if (!res.ok) {
+                    alert('Registration failed');
+                    return;
+                }
+            }
+
+            const res = await fetch('/api/v1/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                token = data.access_token;
+                localStorage.setItem('nexus_token', token);
+                currentUser = data.user;
+                updateAuthUI();
+                closeAuthModal();
+                loadProjects();
+            } else {
+                alert('Invalid credentials');
+            }
+        }
+
+        // Projects
+        async function loadProjects() {
+            try {
+                const res = await fetch('/api/v1/projects', { headers: getAuthHeaders() });
+                if (res.ok) {
+                    projects = await res.json();
+                    const sel = document.getElementById('project-selector');
+                    sel.innerHTML = '';
+                    if (projects.length === 0) {
+                        // Create default project
+                        const createRes = await fetch('/api/v1/projects', {
+                            method: 'POST',
+                            headers: getAuthHeaders(),
+                            body: JSON.stringify({ name: "Default Project", description: "Default web intelligence workspace" })
+                        });
+                        if (createRes.ok) {
+                            const newProj = await createRes.json();
+                            projects = [newProj];
+                        }
+                    }
+                    projects.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.innerText = p.name;
+                        sel.appendChild(opt);
+                    });
+                    if (projects.length > 0) {
+                        activeProjectId = projects[0].id;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        function onProjectChange() {
+            activeProjectId = document.getElementById('project-selector').value;
+            loadJobsList();
+            loadDatasets();
+        }
+
+        async function openNewProjectModal() {
+            const name = prompt("Enter project name:", "Market Intelligence");
+            if (!name) return;
+            const res = await fetch('/api/v1/projects', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ name, description: "Scraping workspace" })
+            });
+            if (res.ok) {
+                await loadProjects();
+            }
+        }
+
+        // Visual Builder Selectors
+        function renderSelectors() {
+            const container = document.getElementById('selectors-container');
+            container.innerHTML = '';
+            activeSelectors.forEach((s, idx) => {
+                const row = document.createElement('div');
+                row.className = "p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 text-xs";
+                row.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <input type="text" value="${s.name}" onchange="updateSelectorField(${idx}, 'name', this.value)" placeholder="Field name" class="bg-slate-950 border border-slate-700/80 rounded px-2 py-1 text-white font-medium w-36">
+                        <button onclick="removeSelectorRow(${idx})" class="text-slate-500 hover:text-rose-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <input type="text" value="${s.selector}" onchange="updateSelectorField(${idx}, 'selector', this.value)" placeholder="CSS or XPath" class="sm:col-span-2 bg-slate-950 border border-slate-700/80 rounded px-2 py-1 text-slate-200 font-mono">
+                        <select onchange="updateSelectorField(${idx}, 'extract_type', this.value)" class="bg-slate-950 border border-slate-700/80 rounded px-2 py-1 text-slate-300">
+                            <option value="text" ${s.extract_type==='text'?'selected':''}>Text</option>
+                            <option value="attr" ${s.extract_type==='attr'?'selected':''}>Attribute</option>
+                            <option value="html" ${s.extract_type==='html'?'selected':''}>HTML</option>
+                        </select>
+                    </div>
+                `;
+                container.appendChild(row);
+            });
+            lucide.createIcons();
+        }
+
+        function addSelectorRow() {
+            activeSelectors.push({ name: `field_${activeSelectors.length+1}`, selector: "p", selector_type: "css", extract_type: "text", attribute_name: "", is_multiple: false });
+            renderSelectors();
+        }
+
+        function removeSelectorRow(idx) {
+            activeSelectors.splice(idx, 1);
+            renderSelectors();
+        }
+
+        function updateSelectorField(idx, field, val) {
+            activeSelectors[idx][field] = val;
+        }
+
+        // Inspector & AI Autopilot
+        async function inspectTargetWebsite() {
+            const url = document.getElementById('builder-url-input').value;
+            const mode = document.getElementById('builder-mode-select').value;
+            const btn = document.getElementById('builder-inspect-btn');
+            btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Loading...</span>`;
+            lucide.createIcons();
+
+            try {
+                const res = await fetch('/api/v1/inspect', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ url, mode })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert(`Inspection error: ${data.detail || 'Failed'}`);
+                    return;
+                }
+
+                document.getElementById('builder-inspect-result-card').classList.remove('hidden');
+                document.getElementById('inspect-title-display').innerText = `Title: ${data.title || '(No title tag)'}`;
+                document.getElementById('inspect-robots-pill').innerText = `robots.txt: ${data.robots_allowed ? 'Allowed' : 'Blocked'}`;
+                document.getElementById('inspect-sitemaps-count').innerText = `Sitemaps discovered: ${data.sitemaps_found.length}`;
+                document.getElementById('inspect-links-count').innerText = `Discovered links: ${data.discovered_links.length}`;
+                document.getElementById('dom-preview-container').innerText = data.html_preview;
+
+            } catch (e) {
+                alert(`Inspection error: ${e.message}`);
+            } finally {
+                btn.innerHTML = `<i data-lucide="search" class="w-4 h-4"></i><span>Inspect & Load</span>`;
+                lucide.createIcons();
+            }
+        }
+
+        async function testConfiguredSelectors() {
+            const url = document.getElementById('builder-url-input').value;
+            const res = await fetch('/api/v1/inspect/test-selectors', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ url, selectors: activeSelectors })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('test-results-view').innerText = JSON.stringify(data.records_preview, null, 2);
+                document.getElementById('test-matches-count').innerText = `${data.results.length} fields tested`;
+            } else {
+                alert('Test failed: ' + (data.detail || 'error'));
+            }
+        }
+
+        async function runAiSchemaSuggestion() {
+            const url = document.getElementById('builder-url-input').value;
+            const instruction = prompt("Enter natural language extraction goal:", "Extract article title, author, date, and link");
+            if (!instruction) return;
+
+            const res = await fetch('/api/v1/ai/suggest-schema', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ url, user_instruction: instruction })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                activeSelectors = data.proposed_fields.map(f => ({
+                    name: f.field_name,
+                    selector: f.selector,
+                    selector_type: f.selector_type || 'css',
+                    extract_type: f.extract_type || 'text',
+                    attribute_name: f.attribute_name || '',
+                    is_multiple: false
+                }));
+                renderSelectors();
+                alert(`AI Schema Autopilot identified: ${data.detected_entity_type} (${data.proposed_fields.length} selectors proposed).`);
+            } else {
+                alert('AI suggestion error: ' + (data.detail || 'error'));
+            }
+        }
+
+        // Launch Crawl Job
+        async function launchScrapeWorkflow() {
+            if (!activeProjectId) {
+                alert("Please select or create a project first.");
+                return;
+            }
+            const url = document.getElementById('builder-url-input').value;
+            const mode = document.getElementById('builder-mode-select').value;
+            const maxPages = parseInt(document.getElementById('builder-max-pages').value, 10) || 5;
+
+            const res = await fetch('/api/v1/jobs', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({
+                    project_id: activeProjectId,
+                    url: url,
+                    name: `Crawl ${url}`,
+                    selectors: activeSelectors,
+                    max_pages: maxPages,
+                    extraction_mode: mode
+                })
+            });
+            if (res.ok) {
+                const job = await res.json();
+                switchTab('jobs');
+                loadJobsList();
+                subscribeJobStream(job.id);
+            } else {
+                const err = await res.json();
+                alert('Failed to launch job: ' + (err.detail || 'error'));
+            }
+        }
+
+        // Job Orchestration & SSE Stream
+        async function loadJobsList() {
+            try {
+                const res = await fetch('/api/v1/jobs', { headers: getAuthHeaders() });
+                if (res.ok) {
+                    jobsList = await res.json();
+                    renderJobsTable();
+                    updateDashboardStats();
+                }
+            } catch (e) {}
+        }
+
+        function renderJobsTable() {
+            const tbody = document.getElementById('jobs-table-body');
+            const dashTbody = document.getElementById('dashboard-recent-jobs-body');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (dashTbody) dashTbody.innerHTML = '';
+
+            if (jobsList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-slate-500">No jobs yet.</td></tr>`;
+                return;
+            }
+
+            jobsList.forEach(j => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/30 transition";
+                const statusColor = j.status === 'completed' ? 'text-emerald-400 bg-emerald-500/10' : j.status === 'running' ? 'text-indigo-400 bg-indigo-500/10 animate-pulse' : j.status === 'failed' ? 'text-rose-400 bg-rose-500/10' : 'text-slate-400 bg-slate-800';
+
+                tr.innerHTML = `
+                    <td class="py-2.5 px-3 font-mono text-slate-300">${j.id.slice(0, 8)}</td>
+                    <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[11px] font-medium ${statusColor}">${j.status}</span></td>
+                    <td class="py-2.5 px-3 text-slate-400">${j.pages_scraped}</td>
+                    <td class="py-2.5 px-3 text-slate-200 font-semibold">${j.records_count}</td>
+                    <td class="py-2.5 px-3 text-right space-x-1">
+                        <button onclick="subscribeJobStream('${j.id}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-indigo-400 text-[11px]">Stream</button>
+                        ${j.status === 'running' ? `<button onclick="cancelJob('${j.id}')" class="px-2 py-1 rounded bg-rose-500/20 text-rose-400 text-[11px]">Cancel</button>` : `<button onclick="retryJob('${j.id}')" class="px-2 py-1 rounded bg-slate-800 text-slate-300 text-[11px]">Retry</button>`}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+
+                if (dashTbody && dashTbody.children.length < 5) {
+                    const dashTr = document.createElement('tr');
+                    dashTr.className = "hover:bg-slate-800/30 transition";
+                    dashTr.innerHTML = `
+                        <td class="py-3 px-4 font-mono text-slate-300">${j.id.slice(0, 8)}</td>
+                        <td class="py-3 px-4 text-slate-200">${j.config_name || 'Ad-hoc'}</td>
+                        <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-[11px] font-medium ${statusColor}">${j.status}</span></td>
+                        <td class="py-3 px-4 text-slate-400">${j.pages_scraped}</td>
+                        <td class="py-3 px-4 font-semibold text-white">${j.records_count}</td>
+                        <td class="py-3 px-4 text-emerald-400">${j.quality_score ? j.quality_score + '%' : 'N/A'}</td>
+                        <td class="py-3 px-4 text-slate-400">${j.duration_seconds}s</td>
+                        <td class="py-3 px-4 text-right">
+                            <button onclick="switchTab('jobs'); subscribeJobStream('${j.id}')" class="text-indigo-400 hover:text-indigo-300">View Logs &rarr;</button>
+                        </td>
+                    `;
+                    dashTbody.appendChild(dashTr);
+                }
+            });
+        }
+
+        function updateDashboardStats() {
+            document.getElementById('stat-total-jobs').innerText = jobsList.length;
+            const totalRecs = jobsList.reduce((acc, j) => acc + (j.records_count || 0), 0);
+            document.getElementById('stat-total-records').innerText = totalRecs;
+
+            const completed = jobsList.filter(j => j.status === 'completed').length;
+            const rate = jobsList.length > 0 ? Math.round((completed / jobsList.length) * 100) : 100;
+            document.getElementById('stat-success-rate').innerText = `${rate}%`;
+        }
+
+        function refreshDashboard() {
+            loadJobsList();
+            loadDatasets();
+        }
+
+        async function cancelJob(jobId) {
+            await fetch(`/api/v1/jobs/${jobId}/cancel`, { method: 'POST', headers: getAuthHeaders() });
+            loadJobsList();
+        }
+
+        async function retryJob(jobId) {
+            const res = await fetch(`/api/v1/jobs/${jobId}/retry`, { method: 'POST', headers: getAuthHeaders() });
+            if (res.ok) {
+                const newJob = await res.json();
+                loadJobsList();
+                subscribeJobStream(newJob.id);
+            }
+        }
+
+        function subscribeJobStream(jobId) {
+            if (activeStreamEventSource) {
+                activeStreamEventSource.close();
+            }
+
+            document.getElementById('active-job-title-display').innerText = `Job ${jobId.slice(0, 8)}`;
+            const consoleEl = document.getElementById('live-logs-console');
+            consoleEl.innerHTML = `<p class="text-indigo-400 font-semibold">&gt; Connected to Live Stream ${jobId.slice(0, 8)}</p>`;
+
+            // Fetch Retry Advisor diagnosis
+            fetchRetryAdvisor(jobId);
+
+            activeStreamEventSource = new EventSource(`/api/v1/jobs/${jobId}/stream`);
+            activeStreamEventSource.onmessage = (e) => {
+                try {
+                    const evt = JSON.parse(e.data);
+                    if (evt.type === 'progress') {
+                        document.getElementById('live-progress-bar').style.width = `${evt.data.percent}%`;
+                    } else if (evt.type === 'log') {
+                        const p = document.createElement('p');
+                        p.innerText = `[${evt.data.level}] ${evt.data.message}`;
+                        if (evt.data.level === 'ERROR') p.className = 'text-rose-400 font-semibold';
+                        else if (evt.data.level === 'WARNING') p.className = 'text-amber-400';
+                        consoleEl.appendChild(p);
+                        consoleEl.scrollTop = consoleEl.scrollHeight;
+                    } else if (evt.type === 'status') {
+                        document.getElementById('active-job-status-pill').innerText = evt.data.status;
+                        if (evt.data.status === 'completed' || evt.data.status === 'failed') {
+                            loadJobsList();
+                            loadDatasets();
+                            fetchRetryAdvisor(jobId);
+                        }
+                    }
+                } catch (err) {}
+            };
+        }
+
+        async function fetchRetryAdvisor(jobId) {
+            try {
+                const res = await fetch(`/api/v1/jobs/${jobId}/retry-advisor`, { headers: getAuthHeaders() });
+                if (res.ok) {
+                    const adv = await res.json();
+                    const textEl = document.getElementById('advisor-recommendation-text');
+                    if (adv.suggested_actions && adv.suggested_actions.length > 0) {
+                        textEl.innerText = adv.suggested_actions.join(' ');
+                    } else {
+                        textEl.innerText = "No issues detected. Job execution verified.";
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // Datasets
+        async function loadDatasets() {
+            try {
+                const res = await fetch('/api/v1/datasets', { headers: getAuthHeaders() });
+                if (res.ok) {
+                    datasetsList = await res.json();
+                    const sel = document.getElementById('datasets-selector');
+                    const radarOld = document.getElementById('radar-old-dataset');
+                    const radarNew = document.getElementById('radar-new-dataset');
+                    const ragSel = document.getElementById('rag-dataset-select');
+
+                    [sel, radarOld, radarNew, ragSel].forEach(s => { if (s) s.innerHTML = '<option value="">Select a Dataset...</option>'; });
+
+                    datasetsList.forEach(d => {
+                        [sel, radarOld, radarNew, ragSel].forEach(s => {
+                            if (s) {
+                                const opt = document.createElement('option');
+                                opt.value = d.id;
+                                opt.innerText = `${d.name} (${d.total_records} records)`;
+                                s.appendChild(opt);
+                            }
+                        });
+                    });
+
+                    if (datasetsList.length > 0 && sel && !sel.value) {
+                        sel.value = datasetsList[0].id;
+                        onDatasetSelected();
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function onDatasetSelected() {
+            const dsId = document.getElementById('datasets-selector').value;
+            if (!dsId) return;
+            currentDatasetPage = 1;
+            await loadDatasetQualityReport(dsId);
+            await loadDatasetRecords(dsId);
+        }
+
+        async function loadDatasetQualityReport(dsId) {
+            try {
+                const res = await fetch(`/api/v1/datasets/${dsId}/quality`, { headers: getAuthHeaders() });
+                if (res.ok) {
+                    const rep = await res.json();
+                    document.getElementById('dq-grade').innerText = rep.grade;
+                    document.getElementById('dq-score').innerText = `${rep.overall_score}%`;
+                    if (rep.metrics && rep.metrics.length >= 3) {
+                        document.getElementById('dq-completeness').innerText = `${rep.metrics[0].score}%`;
+                        document.getElementById('dq-validity').innerText = `${rep.metrics[1].score}%`;
+                        document.getElementById('dq-uniqueness').innerText = `${rep.metrics[2].score}%`;
+                    }
+                }
+            } catch (e) {}
+        }
+
+        async function loadDatasetRecords(dsId, query = '') {
+            try {
+                const q = query ? `&q=${encodeURIComponent(query)}` : '';
+                const res = await fetch(`/api/v1/datasets/${dsId}/records?page=${currentDatasetPage}&per_page=15${q}`, { headers: getAuthHeaders() });
+                if (res.ok) {
+                    const data = await res.json();
+                    currentDatasetRecords = data.records;
+                    renderRecordsTable(data);
+                }
+            } catch (e) {}
+        }
+
+        function renderRecordsTable(data) {
+            const thead = document.getElementById('records-table-head');
+            const tbody = document.getElementById('records-table-body');
+            tbody.innerHTML = '';
+
+            if (!data.records || data.records.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-500">No records found.</td></tr>`;
+                document.getElementById('records-pagination-info').innerText = 'Showing 0 records';
+                return;
+            }
+
+            // Extract column headers from first record
+            const sample = data.records[0].cleaned_data;
+            const fields = Object.keys(sample);
+
+            thead.innerHTML = `<tr><th class="py-2 px-3">#</th><th class="py-2 px-3">Source URL</th>${fields.map(f => `<th class="py-2 px-3">${f}</th>`).join('')}</tr>`;
+
+            data.records.forEach((r, idx) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/30 transition";
+                const cells = fields.map(f => `<td class="py-2 px-3 text-slate-300 font-mono text-[11px] truncate max-w-xs">${r.cleaned_data[f] || '<span class="text-slate-600">null</span>'}</td>`).join('');
+                tr.innerHTML = `<td class="py-2 px-3 text-slate-500">${r.record_index + 1}</td><td class="py-2 px-3 text-indigo-400 font-mono text-[11px] truncate max-w-xs"><a href="${r.source_url}" target="_blank">${r.source_url}</a></td>${cells}`;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('records-pagination-info').innerText = `Page ${data.page} — Showing ${data.records.length} of ${data.total} records`;
+        }
+
+        function searchDatasetRecords() {
+            const dsId = document.getElementById('datasets-selector').value;
+            const q = document.getElementById('dataset-search-input').value;
+            if (dsId) loadDatasetRecords(dsId, q);
+        }
+
+        function changeDatasetPage(delta) {
+            const dsId = document.getElementById('datasets-selector').value;
+            if (!dsId) return;
+            currentDatasetPage = Math.max(1, currentDatasetPage + delta);
+            loadDatasetRecords(dsId);
+        }
+
+        function downloadDatasetExport(format) {
+            const dsId = document.getElementById('datasets-selector').value;
+            if (!dsId) {
+                alert('Select a dataset to export.');
+                return;
+            }
+            window.open(`/api/v1/datasets/${dsId}/export?format=${format}&cleaned_only=true`, '_blank');
+        }
+
+        // Radar Diff
+        async function runRadarDiff() {
+            const oldId = document.getElementById('radar-old-dataset').value;
+            const newId = document.getElementById('radar-new-dataset').value;
+            if (!oldId || !newId) {
+                alert('Please select both baseline and target snapshots.');
+                return;
+            }
+
+            const res = await fetch('/api/v1/radar/diff', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ old_dataset_id: oldId, new_dataset_id: newId })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('radar-results-card').classList.remove('hidden');
+                document.getElementById('diff-added-count').innerText = data.diff.summary.added_count;
+                document.getElementById('diff-removed-count').innerText = data.diff.summary.removed_count;
+                document.getElementById('diff-modified-count').innerText = data.diff.summary.modified_count;
+                document.getElementById('diff-unchanged-count').innerText = data.diff.summary.unchanged_count;
+
+                const detailEl = document.getElementById('diff-detail-container');
+                detailEl.innerHTML = '';
+                if (data.diff.modified_records.length === 0) {
+                    detailEl.innerHTML = '<p class="text-slate-500">No modified records detected.</p>';
+                } else {
+                    data.diff.modified_records.forEach((m, i) => {
+                        const div = document.createElement('div');
+                        div.className = "p-2 rounded bg-slate-900 border border-slate-800 text-xs";
+                        div.innerHTML = `<span class="text-amber-400 font-semibold">Change #${i+1}:</span> <pre class="text-[11px] text-slate-300 mt-1">${JSON.stringify(m.changes, null, 2)}</pre>`;
+                        detailEl.appendChild(div);
+                    });
+                }
+            }
+        }
+
+        // RAG Pipeline
+        let activeRagPipelineId = '';
+        async function createRagPipeline() {
+            const dsId = document.getElementById('rag-dataset-select').value;
+            const name = document.getElementById('rag-name-input').value;
+            if (!dsId) {
+                alert('Select a dataset first.');
+                return;
+            }
+
+            const res = await fetch('/api/v1/rag/pipelines', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ project_id: activeProjectId, dataset_id: dsId, name, chunk_size: 500, chunk_overlap: 50 })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                activeRagPipelineId = data.id;
+                alert(`RAG Pipeline successfully constructed (${data.total_chunks} chunk passages indexed).`);
+            } else {
+                alert('Failed to build RAG pipeline');
+            }
+        }
+
+        async function testRagQuery() {
+            if (!activeRagPipelineId) {
+                alert('Please build a RAG pipeline first.');
+                return;
+            }
+            const query = document.getElementById('rag-query-input').value;
+            if (!query) return;
+
+            const res = await fetch(`/api/v1/rag/pipelines/${activeRagPipelineId}/query`, {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ query, top_k: 3 })
+            });
+            const data = await res.json();
+            const container = document.getElementById('rag-query-results');
+            container.innerHTML = '';
+
+            if (data.matches.length === 0) {
+                container.innerHTML = '<p class="text-slate-500 text-xs text-center">No high-similarity passages matched.</p>';
+                return;
+            }
+
+            data.matches.forEach(m => {
+                const item = document.createElement('div');
+                item.className = "p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5";
+                item.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <span class="text-indigo-400 font-semibold font-mono text-[11px] truncate max-w-sm">${m.source_url}</span>
+                        <span class="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 text-[10px] font-mono">Score: ${Math.round((m.similarity_score||0)*100)}%</span>
+                    </div>
+                    <p class="text-slate-300 font-mono text-[11px] leading-relaxed bg-slate-950 p-2 rounded">${m.text_content}</p>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // API Keys
+        async function createNewApiKey() {
+            const name = prompt("Enter a label for this API key:", "Production Pipeline");
+            if (!name) return;
+
+            const res = await fetch('/api/v1/auth/api-keys', {
+                method: 'POST',
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                document.getElementById('new-key-banner').classList.remove('hidden');
+                document.getElementById('new-key-value').innerText = data.api_key;
+                loadApiKeys();
+            }
+        }
+
+        async function loadApiKeys() {
+            const res = await fetch('/api/v1/auth/api-keys', { headers: getAuthHeaders() });
+            if (res.ok) {
+                const keys = await res.json();
+                const tbody = document.getElementById('api-keys-table-body');
+                tbody.innerHTML = '';
+                keys.forEach(k => {
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-800/30";
+                    tr.innerHTML = `
+                        <td class="py-2.5 px-3 text-slate-200 font-medium">${k.name}</td>
+                        <td class="py-2.5 px-3 font-mono text-indigo-400">${k.key_prefix}...</td>
+                        <td class="py-2.5 px-3 text-slate-400">${new Date(k.created_at).toLocaleDateString()}</td>
+                        <td class="py-2.5 px-3 text-slate-500">${k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Never'}</td>
+                        <td class="py-2.5 px-3 text-right"><button onclick="revokeApiKey('${k.id}')" class="text-rose-400 hover:text-rose-300 text-xs">Revoke</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        async function revokeApiKey(id) {
+            await fetch(`/api/v1/auth/api-keys/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+            loadApiKeys();
+        }
+    </script>
+</body>
+</html>

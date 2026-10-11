@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies for Playwright and lxml
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    libxml2-dev \
+    libxslt-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install --with-deps chromium
+
+COPY backend/ ./backend/
+WORKDIR /app/backend
+
+ENV PYTHONPATH=/app/backend
+ENV HOST=0.0.0.0
+ENV PORT=8000
+
+EXPOSE 8000
+
+CMD ["python", "-m", "uvicorn", "nexus_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
